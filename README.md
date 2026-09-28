@@ -49,7 +49,20 @@ docker compose --profile tools up -d     # optional: Toxiproxy, OTel, Prometheus
 bash infra/kafka/create-topics.sh        # create the topics
 dotnet run --project backend/tools/db-migrator   # apply db/migrations
 dotnet build MelaninWoundCdss.slnx
+
+# local test clinician (dev only)
+dotnet run --project backend/apps/sync/sync-gateway -- create-clinician n.silva Demo-Pass-2026! nurse fac-001 N. Silva
+
+# run the pipeline (separate terminals)
+dotnet run --project backend/apps/sync/sync-gateway --urls http://localhost:8080
+dotnet run --project backend/apps/sync/ingest-persister
+dotnet run --project backend/apps/sync/outbox-relay
+
+# end-to-end check: login → push → Kafka → PostgreSQL → outbox → pull
+python tests/integration/e2e_smoke.py
 ```
+
+Progress and next steps for the backend: [docs/member4-backend-plan.md](docs/member4-backend-plan.md)
 
 ## Working together
 

@@ -18,7 +18,7 @@ public static class ConsumerGroups
     public const string GatewayNotifier = "gateway-notifier";
 }
 
-public static class Headers
+public static class HeaderNames
 {
     public const string EventId = "event-id";
     public const string SchemaVersion = "schema-version";

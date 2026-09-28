@@ -24,6 +24,7 @@ research/**/runs/
 research/**/weights/
 
 # Secrets and local config
+.env.example
 .env
 *.pem
 *.key

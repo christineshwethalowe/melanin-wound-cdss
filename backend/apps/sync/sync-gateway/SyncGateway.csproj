@@ -16,4 +16,10 @@
     <ProjectReference Include="..\..\..\libs\Sync.Common\Sync.Common.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The one shared schema (architecture §5), copied next to the binary for validation. -->
+    <None Include="..\..\..\..\contracts\wound-event.schema.json" Link="contracts\wound-event.schema.json"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>
