@@ -1,7 +1,7 @@
 """
 End-to-end smoke test for plan phases 1-5 (docs/member4-backend-plan.md).
 
-Needs: docker compose stack up, migrations applied, a clinician created, the identity service (port 8085), the gateway (port 8080),
+Needs: docker compose stack up, migrations applied, a clinician created, the API gateway (port 8080), identity service, Sync Gateway,
 ingest persister and outbox relay running.
 
     python tests/integration/e2e_smoke.py

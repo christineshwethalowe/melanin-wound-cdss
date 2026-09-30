@@ -11,9 +11,8 @@ import time
 import urllib.error
 import urllib.request
 
+# Everything goes through the API gateway (ADR 0004).
 GATEWAY = os.environ.get("GATEWAY", "http://localhost:8080")
-IDENTITY = os.environ.get("IDENTITY", "http://localhost:8085")
-IDENTITY_PATHS = ("/v1/auth/", "/v1/admin/", "/.well-known/")
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 
@@ -44,8 +43,7 @@ def uuid7():
 
 
 def http(method, path, body=None, token=None):
-    base = IDENTITY if path.startswith(IDENTITY_PATHS) else GATEWAY
-    req = urllib.request.Request(base + path, method=method)
+    req = urllib.request.Request(GATEWAY + path, method=method)
     req.add_header("Content-Type", "application/json")
     if token:
         req.add_header("Authorization", f"Bearer {token}")
