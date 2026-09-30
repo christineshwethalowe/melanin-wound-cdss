@@ -1,6 +1,7 @@
 # Member 4 backend plan (IT23227354)
 
-Plan for finishing the backend from the architecture document (v2.0), following the build order in §14.1.
+Plan for finishing the backend from the architecture document (v2.0, with the
+[v2.1 changes](architecture/v2.1-changes.md)), following the build order in §14.1.
 Each phase ends with a **done when** check that can be demonstrated on the local Docker stack.
 
 Status key: ✅ done · 🧩 architecture skeleton in place (structure, types, wiring; logic TODO) · 🔨 in progress · ⬜ not started
@@ -29,6 +30,26 @@ and the pipeline recovered when Kafka came back.
 | 10 | Evaluation harness: device simulator, faults, metrics | §13 | ⬜ |
 | 11 | Observability: OpenTelemetry, Prometheus, Grafana | §13 | ⬜ |
 | 12 | Mobile: Drift queue + sync engine | §6 | ⬜ |
+
+### Architecture v2.1 changes (done before phase 6)
+
+After senior developer review: identity as its own service, an API gateway, and an admin dashboard.
+What changes in the architecture: [architecture/v2.1-changes.md](architecture/v2.1-changes.md).
+
+| Step | What | Decision | Status |
+|------|------|----------|--------|
+| A1 | Decision records and v2.1 changes | 0003, 0004, 0005 | ✅ |
+| A2 | identity-service: move auth, MFA and admin out of the gateway; RS256; OIDC discovery + JWKS | 0003 | ⬜ |
+| A3 | Sync Gateway as resource server only (validates with cached JWKS) | 0003 | ⬜ |
+| A4 | api-gateway (YARP): routing, rate limits, CORS, edge JWT check | 0004 | ⬜ |
+| A5 | Web-client sessions: `clinical/0008` adds `client_id`, nullable `device_id` for the dashboard | 0005 | ⬜ |
+| A6 | Wiring: docker-compose, `auth.schema.json`, integration tests through the edge | 0003, 0004 | ⬜ |
+| A7 | `frontend/admin_dashboard` (Flutter Web) | 0005 | ⬜ |
+| A8 | CI jobs and README | — | ⬜ |
+
+Effect on later phases: phase 8 (REST baseline) and phase 10 (device simulator) go through the API gateway;
+phase 9 adds an identity-service role, the only one that can read `clinical.clinician_credential`;
+phase 12 points the app at the single edge URL.
 
 ---
 
