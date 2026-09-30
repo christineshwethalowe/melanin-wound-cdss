@@ -25,6 +25,7 @@
   </Folder>
   <Folder Name="/backend/tests/">
     <Project Path="backend/tests/Sync.Common.Tests/Sync.Common.Tests.csproj" />
+    <Project Path="backend/tests/SyncGateway.Tests/SyncGateway.Tests.csproj" />
   </Folder>
   <Folder Name="/backend/tests/rag-stub/">
     <Project Path="backend/tests/rag-stub/RagStub.csproj" />

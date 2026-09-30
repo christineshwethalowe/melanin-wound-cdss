@@ -14,20 +14,22 @@ public sealed record AuthResult(TokenPair? Tokens, string? ReasonCode)
 /// Login, refresh and logout against clinical.clinician / clinician_credential / clinician_session
 /// (architecture §7.3, §9.1). Every attempt is written to audit.auth_audit.
 /// </summary>
-public sealed class AuthService(NpgsqlDataSource db, PasswordHasher hasher, JwtTokenService tokens)
+public sealed class AuthService(NpgsqlDataSource db, PasswordHasher hasher, JwtTokenService tokens, SecretProtector secrets)
 {
     public const int MaxFailedAttempts = 5;
     public static readonly TimeSpan LockoutDuration = TimeSpan.FromMinutes(15);
 
-    public async Task<AuthResult> LoginAsync(string username, string password, string deviceId, CancellationToken ct)
+    /// <param name="totp">Required once the clinician has MFA enabled. A wrong code counts as a failed attempt.</param>
+    public async Task<AuthResult> LoginAsync(string username, string password, string deviceId, string? totp, CancellationToken ct)
     {
         await using var conn = await db.OpenConnectionAsync(ct);
         await using var tx = await conn.BeginTransactionAsync(ct);
 
         Guid clinicianId; string role, facilityId, passwordHash; byte[] salt; int failedAttempts; DateTime? lockedUntil;
+        bool mfaEnabled; byte[]? mfaSecret; long? mfaLastStep;
         await using (var cmd = new NpgsqlCommand("""
             SELECT c.clinician_id, c.role, c.facility_id, cc.password_hash, cc.password_salt,
-                   cc.failed_attempts, cc.locked_until
+                   cc.failed_attempts, cc.locked_until, cc.mfa_enabled, cc.mfa_secret_encrypted, cc.mfa_last_used_step
             FROM clinical.clinician c
             JOIN clinical.clinician_credential cc USING (clinician_id)
             WHERE c.username = @u AND c.active
@@ -39,40 +41,61 @@ public sealed class AuthService(NpgsqlDataSource db, PasswordHasher hasher, JwtT
             if (!await r.ReadAsync(ct))
             {
                 await r.DisposeAsync();
-                await AuditAsync(conn, tx, username, null, deviceId, "LOGIN", false, "INVALID_CREDENTIALS", ct);
+                await AuthAudit.WriteAsync(conn, tx, "LOGIN", username, null, deviceId, false, "INVALID_CREDENTIALS", ct);
                 await tx.CommitAsync(ct);
                 return AuthResult.Fail("INVALID_CREDENTIALS");
             }
             clinicianId = r.GetGuid(0); role = r.GetString(1); facilityId = r.GetString(2);
             passwordHash = r.GetString(3); salt = (byte[])r[4]; failedAttempts = r.GetInt32(5);
             lockedUntil = r.IsDBNull(6) ? null : r.GetDateTime(6);
+            mfaEnabled = r.GetBoolean(7);
+            mfaSecret = r.IsDBNull(8) ? null : (byte[])r[8];
+            mfaLastStep = r.IsDBNull(9) ? null : r.GetInt64(9);
+        }
+
+        async Task<AuthResult> FailAttemptAsync(string reason)
+        {
+            var attempts = failedAttempts + 1;
+            var lockNow = attempts >= MaxFailedAttempts;
+            await Sql.ExecAsync(conn, tx, """
+                UPDATE clinical.clinician_credential SET failed_attempts = @a, locked_until = @l WHERE clinician_id = @id
+                """, ct, ("a", lockNow ? 0 : attempts), ("l", lockNow ? DateTime.UtcNow + LockoutDuration : null),
+                ("id", clinicianId));
+            await AuthAudit.WriteAsync(conn, tx, lockNow ? "LOCKOUT" : "LOGIN", username, clinicianId, deviceId, false,
+                lockNow ? "CREDENTIAL_LOCKED" : reason, ct);
+            await tx.CommitAsync(ct);
+            return AuthResult.Fail(lockNow ? "CREDENTIAL_LOCKED" : reason);
         }
 
         if (lockedUntil > DateTime.UtcNow)
         {
-            await AuditAsync(conn, tx, username, clinicianId, deviceId, "LOGIN", false, "CREDENTIAL_LOCKED", ct);
+            await AuthAudit.WriteAsync(conn, tx, "LOGIN", username, clinicianId, deviceId, false, "CREDENTIAL_LOCKED", ct);
             await tx.CommitAsync(ct);
             return AuthResult.Fail("CREDENTIAL_LOCKED");
         }
 
         if (!hasher.Verify(password, Convert.FromBase64String(passwordHash), salt))
+            return await FailAttemptAsync("INVALID_CREDENTIALS");
+
+        if (mfaEnabled && mfaSecret is not null)
         {
-            var attempts = failedAttempts + 1;
-            var lockNow = attempts >= MaxFailedAttempts;
-            await ExecAsync(conn, tx, """
-                UPDATE clinical.clinician_credential
-                SET failed_attempts = @a, locked_until = @l
-                WHERE clinician_id = @id
-                """, ct, ("a", lockNow ? 0 : attempts), ("l", lockNow ? DateTime.UtcNow + LockoutDuration : DBNull.Value),
-                ("id", clinicianId));
-            await AuditAsync(conn, tx, username, clinicianId, deviceId, lockNow ? "LOCKOUT" : "LOGIN", false,
-                lockNow ? "CREDENTIAL_LOCKED" : "INVALID_CREDENTIALS", ct);
-            await tx.CommitAsync(ct);
-            return AuthResult.Fail(lockNow ? "CREDENTIAL_LOCKED" : "INVALID_CREDENTIALS");
+            // No code yet: the app should ask for one. Not a guess, so it does not count towards lockout.
+            if (string.IsNullOrEmpty(totp))
+            {
+                await AuthAudit.WriteAsync(conn, tx, "LOGIN", username, clinicianId, deviceId, false, "MFA_REQUIRED", ct);
+                await tx.CommitAsync(ct);
+                return AuthResult.Fail("MFA_REQUIRED");
+            }
+
+            var step = Totp.Verify(secrets.Unprotect(mfaSecret, clinicianId), totp, DateTimeOffset.UtcNow, mfaLastStep);
+            if (step is null) return await FailAttemptAsync("INVALID_TOTP");
+            await Sql.ExecAsync(conn, tx,
+                "UPDATE clinical.clinician_credential SET mfa_last_used_step = @s WHERE clinician_id = @id",
+                ct, ("s", step.Value), ("id", clinicianId));
         }
 
         // Prototype rule: an unknown device is registered to the clinician's facility on first login.
-        await ExecAsync(conn, tx, """
+        await Sql.ExecAsync(conn, tx, """
             INSERT INTO clinical.device (device_id, facility_id) VALUES (@d, @f) ON CONFLICT (device_id) DO NOTHING
             """, ct, ("d", deviceId), ("f", facilityId));
         await using (var check = new NpgsqlCommand(
@@ -82,17 +105,17 @@ public sealed class AuthService(NpgsqlDataSource db, PasswordHasher hasher, JwtT
             check.Parameters.AddWithValue("d", deviceId);
             if (await check.ExecuteScalarAsync(ct) is not true)
             {
-                await AuditAsync(conn, tx, username, clinicianId, deviceId, "LOGIN", false, "DEVICE_NOT_ALLOWED", ct);
+                await AuthAudit.WriteAsync(conn, tx, "LOGIN", username, clinicianId, deviceId, false, "DEVICE_NOT_ALLOWED", ct);
                 await tx.CommitAsync(ct);
                 return AuthResult.Fail("DEVICE_NOT_ALLOWED");
             }
         }
 
-        await ExecAsync(conn, tx,
+        await Sql.ExecAsync(conn, tx,
             "UPDATE clinical.clinician_credential SET failed_attempts = 0, locked_until = NULL WHERE clinician_id = @id",
             ct, ("id", clinicianId));
         var pair = await IssueSessionAsync(conn, tx, clinicianId, deviceId, facilityId, role, ct);
-        await AuditAsync(conn, tx, username, clinicianId, deviceId, "LOGIN", true, null, ct);
+        await AuthAudit.WriteAsync(conn, tx, "LOGIN", username, clinicianId, deviceId, true, null, ct);
         await tx.CommitAsync(ct);
         return AuthResult.Ok(pair);
     }
@@ -106,16 +129,16 @@ public sealed class AuthService(NpgsqlDataSource db, PasswordHasher hasher, JwtT
         var session = await FindActiveSessionAsync(conn, tx, refreshToken, ct);
         if (session is null)
         {
-            await AuditAsync(conn, tx, "(refresh)", null, null, "REFRESH", false, "INVALID_REFRESH_TOKEN", ct);
+            await AuthAudit.WriteAsync(conn, tx, "REFRESH", "(refresh)", null, null, false, "INVALID_REFRESH_TOKEN", ct);
             await tx.CommitAsync(ct);
             return AuthResult.Fail("INVALID_REFRESH_TOKEN");
         }
 
         var s = session.Value;
-        await ExecAsync(conn, tx, "UPDATE clinical.clinician_session SET revoked_at = now() WHERE session_id = @s",
+        await Sql.ExecAsync(conn, tx, "UPDATE clinical.clinician_session SET revoked_at = now() WHERE session_id = @s",
             ct, ("s", s.SessionId));
         var pair = await IssueSessionAsync(conn, tx, s.ClinicianId, s.DeviceId, s.FacilityId, s.Role, ct);
-        await AuditAsync(conn, tx, s.Username, s.ClinicianId, s.DeviceId, "REFRESH", true, null, ct);
+        await AuthAudit.WriteAsync(conn, tx, "REFRESH", s.Username, s.ClinicianId, s.DeviceId, true, null, ct);
         await tx.CommitAsync(ct);
         return AuthResult.Ok(pair);
     }
@@ -128,9 +151,9 @@ public sealed class AuthService(NpgsqlDataSource db, PasswordHasher hasher, JwtT
         var session = await FindActiveSessionAsync(conn, tx, refreshToken, ct);
         if (session is { } s)
         {
-            await ExecAsync(conn, tx, "UPDATE clinical.clinician_session SET revoked_at = now() WHERE session_id = @s",
+            await Sql.ExecAsync(conn, tx, "UPDATE clinical.clinician_session SET revoked_at = now() WHERE session_id = @s",
                 ct, ("s", s.SessionId));
-            await AuditAsync(conn, tx, s.Username, s.ClinicianId, s.DeviceId, "LOGOUT", true, null, ct);
+            await AuthAudit.WriteAsync(conn, tx, "LOGOUT", s.Username, s.ClinicianId, s.DeviceId, true, null, ct);
         }
         await tx.CommitAsync(ct);
     }
@@ -139,7 +162,7 @@ public sealed class AuthService(NpgsqlDataSource db, PasswordHasher hasher, JwtT
         Guid clinicianId, string deviceId, string facilityId, string role, CancellationToken ct)
     {
         var (raw, hash) = JwtTokenService.CreateRefreshToken();
-        await ExecAsync(conn, tx, """
+        await Sql.ExecAsync(conn, tx, """
             INSERT INTO clinical.clinician_session (clinician_id, device_id, refresh_token_hash, expires_at, last_seen_at)
             VALUES (@c, @d, @h, @e, now())
             """, ct, ("c", clinicianId), ("d", deviceId), ("h", hash), ("e", DateTime.UtcNow + tokens.RefreshTokenLifetime));
@@ -161,21 +184,5 @@ public sealed class AuthService(NpgsqlDataSource db, PasswordHasher hasher, JwtT
         await using var r = await cmd.ExecuteReaderAsync(ct);
         if (!await r.ReadAsync(ct)) return null;
         return (r.GetGuid(0), r.GetGuid(1), r.GetString(2), r.GetString(3), r.GetString(4), r.GetString(5));
-    }
-
-    private static Task AuditAsync(NpgsqlConnection conn, NpgsqlTransaction tx, string username, Guid? clinicianId,
-        string? deviceId, string action, bool success, string? reason, CancellationToken ct) =>
-        ExecAsync(conn, tx, """
-            INSERT INTO audit.auth_audit (username, clinician_id, device_id, action, success, reason_code)
-            VALUES (@u, @c, @d, @a, @s, @r)
-            """, ct, ("u", username), ("c", (object?)clinicianId ?? DBNull.Value), ("d", (object?)deviceId ?? DBNull.Value),
-            ("a", action), ("s", success), ("r", (object?)reason ?? DBNull.Value));
-
-    private static async Task ExecAsync(NpgsqlConnection conn, NpgsqlTransaction tx, string sql, CancellationToken ct,
-        params (string Name, object Value)[] parameters)
-    {
-        await using var cmd = new NpgsqlCommand(sql, conn, tx);
-        foreach (var (name, value) in parameters) cmd.Parameters.AddWithValue(name, value);
-        await cmd.ExecuteNonQueryAsync(ct);
     }
 }

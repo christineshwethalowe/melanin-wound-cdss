@@ -4,6 +4,7 @@ using Microsoft.IdentityModel.Tokens;
 using Npgsql;
 using Sync.Common.Kafka;
 using Sync.Common.Persistence;
+using SyncGateway.Admin;
 using SyncGateway.Auth;
 using SyncGateway.Endpoints;
 using SyncGateway.Push;
@@ -26,9 +27,12 @@ if (jwt.SigningKey.Length < 32)
 
 builder.Services.AddSingleton(dataSource);
 builder.Services.AddSingleton(jwt);
+builder.Services.AddSingleton(new SecretProtector(builder.Configuration["Secrets:EncryptionKey"] ?? ""));
 builder.Services.AddSingleton<JwtTokenService>();
 builder.Services.AddSingleton<PasswordHasher>();
 builder.Services.AddSingleton<AuthService>();
+builder.Services.AddSingleton<MfaService>();
+builder.Services.AddSingleton<ClinicianAdminService>();
 builder.Services.AddSingleton<WoundEventValidator>();
 builder.Services.AddSingleton<PushService>();
 builder.Services.AddSingleton<IProducer<string, byte[]>>(_ => new ProducerBuilder<string, byte[]>(
@@ -51,7 +55,8 @@ builder.Services
             RoleClaimType = ClaimNames.Role,
         };
     });
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorizationBuilder()
+    .AddPolicy(AdminEndpoints.AdminPolicy, p => p.RequireRole("admin"));
 
 var app = builder.Build();
 
@@ -67,6 +72,8 @@ app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 
 var v1 = app.MapGroup("/v1");
 v1.MapAuthEndpoints();
+v1.MapAdminEndpoints();
+v1.MapPatientEndpoints();
 v1.MapPushEndpoint();
 v1.MapPullEndpoint();
 v1.MapFiguresProxyEndpoint();

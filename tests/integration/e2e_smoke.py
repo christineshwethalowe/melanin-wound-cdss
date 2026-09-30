@@ -2,104 +2,33 @@
 End-to-end smoke test for plan phases 1-5 (docs/member4-backend-plan.md).
 
 Needs: docker compose stack up, migrations applied, a clinician created, and the gateway (port 8080),
-ingest persister and outbox relay running. Standard library only.
+ingest persister and outbox relay running.
 
     python tests/integration/e2e_smoke.py
 
 Test clinician (local dev only), created with:
     dotnet run --project backend/apps/sync/sync-gateway -- create-clinician n.silva Demo-Pass-2026! nurse fac-001 N. Silva
 """
-import json
 import os
-import secrets
-import subprocess
 import sys
-import time
-import urllib.error
-import urllib.request
 
-GATEWAY = os.environ.get("GATEWAY", "http://localhost:8080")
+from client import Checks, http, login, sql, uuid7, wait_for, wound_event
+
 USERNAME = os.environ.get("E2E_USER", "n.silva")
 PASSWORD = os.environ.get("E2E_PASSWORD", "Demo-Pass-2026!")
 DEVICE = "dev-a41c"
 FACILITY = "fac-001"
 
-passed = failed = 0
+t = Checks()
+check = t.check
 
 
-def check(name, condition, detail=""):
-    global passed, failed
-    if condition:
-        passed += 1
-        print(f"  PASS  {name}")
-    else:
-        failed += 1
-        print(f"  FAIL  {name}  {detail}")
-
-
-def uuid7():
-    ms = int(time.time() * 1000)
-    rand = int.from_bytes(secrets.token_bytes(10), "big")
-    value = (ms << 80) | (0x7 << 76) | ((rand >> 68) & 0xFFF) << 64 | (0b10 << 62) | (rand & ((1 << 62) - 1))
-    h = f"{value:032x}"
-    return f"{h[:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:]}"
-
-
-def http(method, path, body=None, token=None):
-    req = urllib.request.Request(GATEWAY + path, method=method)
-    req.add_header("Content-Type", "application/json")
-    if token:
-        req.add_header("Authorization", f"Bearer {token}")
-    data = json.dumps(body).encode() if body is not None else None
-    try:
-        with urllib.request.urlopen(req, data, timeout=30) as r:
-            raw = r.read()
-            return r.status, (json.loads(raw) if raw else None)
-    except urllib.error.HTTPError as e:
-        raw = e.read()
-        return e.code, (json.loads(raw) if raw else None)
-
-
-def sql(query):
-    out = subprocess.run(["docker", "exec", "postgres", "psql", "-U", "cdss", "-d", "cdss", "-tAc", query],
-                         capture_output=True, text=True, check=True)
-    return out.stdout.strip()
-
-
-def wound_event(assessment_id, wound_id, revision=1, **overrides):
-    evt = {
-        "schemaVersion": "1.0",
-        "eventId": uuid7(),
-        "assessmentId": assessment_id,
-        "revision": revision,
-        "woundId": wound_id,
-        "patientRef": "p-" + secrets.token_hex(4),
-        "deviceId": DEVICE,
-        "facilityId": FACILITY,
-        "capturedAt": "2026-10-03T09:41:12+05:30",
-        "analytics": {
-            "areaMm2": 412.6,
-            "colourRegions": [{"cluster": 1, "percent": 61.2}, {"cluster": 2, "percent": 27.9}],
-            "fitzpatrickClass": "V",
-            "pipeline": {"calibration": "2.1.0", "segmentation": "yolo11n-seg-0.4"},
-        },
-        "clinicalAssessment": {"pedalPulses": "not_recorded", "protectiveSensation": "absent"},
-    }
-    evt.update(overrides)
-    return evt
-
-
-def wait_for(query, expected, seconds=20):
-    deadline = time.time() + seconds
-    while time.time() < deadline:
-        if sql(query) == expected:
-            return True
-        time.sleep(0.5)
-    return False
+def event(assessment, wound, **overrides):
+    return wound_event(assessment, wound, DEVICE, FACILITY, **overrides)
 
 
 print("Phase 1: auth")
-status, body = http("POST", "/v1/auth/login", {"username": USERNAME, "password": PASSWORD, "deviceId": DEVICE})
+status, body = login(USERNAME, PASSWORD, DEVICE)
 check("login returns tokens", status == 200 and body and "accessToken" in body, f"{status} {body}")
 if status != 200:
     sys.exit(f"Cannot continue without a login ({status} {body}). Is the clinician created?")
@@ -111,14 +40,14 @@ old_refresh, refresh, token = refresh, body["refreshToken"], body["accessToken"]
 status, _ = http("POST", "/v1/auth/refresh", {"refreshToken": old_refresh})
 check("old refresh token is rejected after rotation", status == 401, f"{status}")
 
-status, _ = http("POST", "/v1/sync/push", {"deviceId": DEVICE, "events": [wound_event(uuid7(), uuid7())]})
+status, _ = http("POST", "/v1/sync/push", {"deviceId": DEVICE, "events": [event(uuid7(), uuid7())]})
 check("push without token is 401", status == 401, f"{status}")
 
 print("Phase 2: push")
 assessment, wound = uuid7(), uuid7()
-good = wound_event(assessment, wound)
-invalid = wound_event(uuid7(), wound, clinicalAssessment={"protectiveSensation": "absent"})
-other_facility = wound_event(uuid7(), wound, facilityId="fac-999")
+good = event(assessment, wound)
+invalid = event(uuid7(), wound, clinicalAssessment={"protectiveSensation": "absent"})
+other_facility = event(uuid7(), wound, facilityId="fac-999")
 status, body = http("POST", "/v1/sync/push",
                     {"deviceId": DEVICE, "batchId": "b1", "events": [good, invalid, good, other_facility]}, token)
 statuses = [r["status"] for r in body["results"]] if body else []
@@ -155,8 +84,8 @@ print("Phase 1: lockout (uses a second throwaway clinician if E2E_LOCKOUT_USER i
 lock_user = os.environ.get("E2E_LOCKOUT_USER")
 if lock_user:
     for _ in range(5):
-        http("POST", "/v1/auth/login", {"username": lock_user, "password": "wrong", "deviceId": DEVICE})
-    status, body = http("POST", "/v1/auth/login", {"username": lock_user, "password": "wrong", "deviceId": DEVICE})
+        login(lock_user, "wrong", DEVICE)
+    status, body = login(lock_user, "wrong", DEVICE)
     check("5 failures lock the credential", status == 401 and body["code"] == "CREDENTIAL_LOCKED", body)
 else:
     print("  skip  set E2E_LOCKOUT_USER to a throwaway clinician to test lockout")
@@ -165,5 +94,4 @@ status, _ = http("POST", "/v1/auth/logout", {"refreshToken": refresh})
 status2, _ = http("POST", "/v1/auth/refresh", {"refreshToken": refresh})
 check("logout revokes the session", status == 204 and status2 == 401, f"{status} {status2}")
 
-print(f"\n{passed} passed, {failed} failed")
-sys.exit(1 if failed else 0)
+sys.exit(t.finish())

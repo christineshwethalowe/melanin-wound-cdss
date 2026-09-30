@@ -1,7 +1,64 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://j26-se-330/contracts/auth/0.1",
-  "title": "Auth (login / refresh / logout)",
-  "$comment": "DRAFT. Placeholder for architecture §7.3. Fields are examples until agreed by the owning members.",
-  "type": "object"
+  "$id": "https://j26-se-330/contracts/auth/1.0",
+  "title": "Auth (login / refresh / logout / MFA)",
+  "description": "Request and response bodies for /v1/auth/* (architecture §7.3). Each operation is a named definition under $defs. The access token is a 15-minute JWT with claims sub, device_id, facility_id, role; the refresh token is opaque and stored server-side only as a SHA-256 hash.",
+  "$defs": {
+    "loginRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["username", "password", "deviceId"],
+      "properties": {
+        "username": { "type": "string", "minLength": 3, "maxLength": 64 },
+        "password": { "type": "string", "minLength": 1 },
+        "deviceId": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "totp": { "type": ["string", "null"], "pattern": "^[0-9]{6}$", "description": "Required once MFA is enabled" }
+      }
+    },
+    "refreshRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["refreshToken"],
+      "properties": { "refreshToken": { "type": "string", "minLength": 1 } },
+      "description": "Body of POST /v1/auth/refresh (rotates both tokens) and POST /v1/auth/logout (revokes the session)"
+    },
+    "tokenResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["accessToken", "refreshToken", "expiresIn"],
+      "properties": {
+        "accessToken": { "type": "string" },
+        "refreshToken": { "type": "string" },
+        "expiresIn": { "type": "integer", "description": "Access token lifetime in seconds (900)" }
+      }
+    },
+    "authError": {
+      "type": "object",
+      "required": ["code"],
+      "properties": {
+        "code": {
+          "enum": [
+            "INVALID_CREDENTIALS", "CREDENTIAL_LOCKED", "MFA_REQUIRED", "INVALID_TOTP",
+            "DEVICE_NOT_ALLOWED", "INVALID_REFRESH_TOKEN", "MISSING_FIELDS"
+          ]
+        }
+      },
+      "description": "401 body. The device's offline queue is never affected by any auth error."
+    },
+    "mfaEnrollResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["secret", "otpauthUri"],
+      "properties": {
+        "secret": { "type": "string", "pattern": "^[A-Z2-7]+$", "description": "Base32" },
+        "otpauthUri": { "type": "string", "pattern": "^otpauth://totp/" }
+      }
+    },
+    "mfaConfirmRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code"],
+      "properties": { "code": { "type": "string", "pattern": "^[0-9]{6}$" } }
+    }
+  }
 }

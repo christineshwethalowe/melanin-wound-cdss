@@ -40,17 +40,45 @@ melanin-wound-cdss/
 
 ## Running locally
 
+### Everything in Docker (only Docker needed)
+
+```bash
+docker compose up -d --build
+```
+
+This starts Kafka, Postgres, creates the topics, applies the migrations and seed, creates two demo users,
+then starts the Sync Gateway, ingest persister, outbox relay, orchestrator and the Recommendation Service stub.
+
+| What | Where |
+|------|-------|
+| Sync Gateway | http://localhost:8080 (`/health`) |
+| Recommendation Service stub | http://localhost:5080 |
+| Kafka UI | http://localhost:8081 |
+| PostgreSQL | `localhost:5432` (cdss / cdss) |
+| Demo users (local only) | `admin.demo` / `Demo-Admin-2026!` (admin), `n.silva` / `Demo-Pass-2026!` (nurse), facility `fac-001` |
+
+```bash
+docker compose logs -f sync-gateway ingest-persister   # follow logs
+docker compose down                                    # stop (keeps data)
+docker compose down -v                                 # stop and delete Kafka + Postgres data
+```
+
+After changing backend code, run `docker compose up -d --build` again.
+
+### Services with `dotnet run` (for development)
+
 Requirements: Docker, .NET 10 SDK, Flutter 3.x (for the mobile app).
 
 ```bash
 cp .env.example .env
-docker compose up -d                     # Kafka (KRaft), Postgres + pgvector, Kafka UI
-docker compose --profile tools up -d     # optional: Toxiproxy, OTel, Prometheus, Grafana
-bash infra/kafka/create-topics.sh        # create the topics
-dotnet run --project backend/tools/db-migrator   # apply db/migrations
+docker compose up -d kafka postgres kafka-ui   # infrastructure only
+docker compose --profile tools up -d           # optional: Toxiproxy, OTel, Prometheus, Grafana
+bash infra/kafka/create-topics.sh              # create the topics
+dotnet run --project backend/tools/db-migrator # apply db/migrations
 dotnet build MelaninWoundCdss.slnx
 
-# local test clinician (dev only)
+# local test clinician (dev only). Bootstrap one admin per facility this way; the admin then
+# registers everyone else through POST /v1/admin/clinicians
 dotnet run --project backend/apps/sync/sync-gateway -- create-clinician n.silva Demo-Pass-2026! nurse fac-001 N. Silva
 
 # run the pipeline (separate terminals)
@@ -60,7 +88,13 @@ dotnet run --project backend/apps/sync/outbox-relay
 
 # end-to-end check: login → push → Kafka → PostgreSQL → outbox → pull
 python tests/integration/e2e_smoke.py
+
+# registration, MFA, patient alias and audit trail (build step 2)
+python tests/integration/e2e_step2_auth_admin.py
 ```
+
+Outside local development, set `Jwt__SigningKey` and `Secrets__EncryptionKey` (each at least 32 characters)
+as environment variables instead of using the values in `appsettings.json`.
 
 Progress and next steps for the backend: [docs/member4-backend-plan.md](docs/member4-backend-plan.md)
 

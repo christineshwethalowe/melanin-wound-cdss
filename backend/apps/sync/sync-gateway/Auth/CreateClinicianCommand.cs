@@ -1,9 +1,11 @@
 using Npgsql;
+using SyncGateway.Admin;
 
 namespace SyncGateway.Auth;
 
 /// <summary>
-/// Registers a clinician from the command line (local testing and demos):
+/// Registers a clinician from the command line. Used to bootstrap the first admin of a facility and for
+/// local testing; after that, admins register clinicians through POST /v1/admin/clinicians.
 ///   dotnet run --project backend/apps/sync/sync-gateway -- create-clinician &lt;username&gt; &lt;password&gt; &lt;role&gt; &lt;facilityId&gt; [full name]
 /// Role is one of nurse, wound_specialist, admin. The facility must already exist.
 /// </summary>
@@ -19,30 +21,16 @@ public static class CreateClinicianCommand
 
         var (username, password, role, facilityId) = (args[1], args[2], args[3], args[4]);
         var fullName = args.Length > 5 ? string.Join(' ', args[5..]) : username;
-        var (hash, salt) = new PasswordHasher().Hash(password);
 
-        await using var conn = await db.OpenConnectionAsync();
-        await using var tx = await conn.BeginTransactionAsync();
+        var admin = new ClinicianAdminService(db, new PasswordHasher());
+        var (id, error) = await admin.RegisterAsync(null, facilityId,
+            new RegisterClinicianRequest(username, password, fullName, role), CancellationToken.None);
 
-        await using var insert = new NpgsqlCommand("""
-            WITH c AS (
-                INSERT INTO clinical.clinician (username, full_name, role, facility_id)
-                VALUES (@u, @n, @r, @f)
-                RETURNING clinician_id
-            )
-            INSERT INTO clinical.clinician_credential (clinician_id, password_hash, password_salt)
-            SELECT clinician_id, @h, @s FROM c
-            RETURNING clinician_id
-            """, conn, tx);
-        insert.Parameters.AddWithValue("u", username);
-        insert.Parameters.AddWithValue("n", fullName);
-        insert.Parameters.AddWithValue("r", role);
-        insert.Parameters.AddWithValue("f", facilityId);
-        insert.Parameters.AddWithValue("h", Convert.ToBase64String(hash));
-        insert.Parameters.AddWithValue("s", salt);
-
-        var id = await insert.ExecuteScalarAsync();
-        await tx.CommitAsync();
+        if (error is not null)
+        {
+            Console.Error.WriteLine($"Could not create clinician '{username}': {error}");
+            return 1;
+        }
         Console.WriteLine($"Created clinician '{username}' ({role}, {facilityId}) with id {id}.");
         return 0;
     }

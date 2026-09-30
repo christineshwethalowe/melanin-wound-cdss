@@ -35,9 +35,9 @@ public static class ExpectedSchemaVersions
 {
     public static readonly IReadOnlyDictionary<string, int> All = new Dictionary<string, int>
     {
-        ["clinical"] = 6,
+        ["clinical"] = 7,
         ["messaging"] = 1,
-        ["audit"] = 2,
+        ["audit"] = 3,
         ["sync"] = 1,
     };
 }

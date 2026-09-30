@@ -3,7 +3,10 @@
 Plan for finishing the backend from the architecture document (v2.0), following the build order in §14.1.
 Each phase ends with a **done when** check that can be demonstrated on the local Docker stack.
 
-Status key: ✅ done · 🔨 in progress · ⬜ not started
+Status key: ✅ done · 🧩 architecture skeleton in place (structure, types, wiring; logic TODO) · 🔨 in progress · ⬜ not started
+
+**Run everything in Docker:** `docker compose up -d --build` (see README). Both integration suites pass against
+the containers.
 
 **Verify phases 1–5:** `python tests/integration/e2e_smoke.py` (18 checks) with the stack, gateway, persister and
 relay running. Also verified by hand on 2026-09-28: replaying `wound-events` from offset 0 left the row count
@@ -14,11 +17,12 @@ and the pipeline recovered when Kafka came back.
 |-------|------|--------------|--------|
 | 0 | Repo, Docker stack, migrations, shared library | §4, §9.2, App. A | ✅ |
 | 1 | Clinician auth in the gateway | §7.3, §9.1, §12 | ✅ |
+| 1b | Admin registration, TOTP MFA, patient alias, audit trail | §7.3, §9.1, §12, §14.1 step 2 | ✅ |
 | 2 | Push endpoint: validate → Kafka (acks=all) | §5, §7.1, §8.2 | ✅ |
 | 3 | Ingest persister: Kafka → PostgreSQL, idempotent | §9.3, §9.4 | ✅ |
 | 4 | Outbox relay: PostgreSQL → Kafka | §4, §9.3 | ✅ |
 | 5 | Pull endpoint: change log → device | §7.2 | ✅ |
-| 6 | Orchestrator workflow + Recommendation Service stub | §10 | ⬜ |
+| 6 | Orchestrator workflow + Recommendation Service stub | §10 | 🧩 skeleton: Agent Framework graph of 6 typed executors builds at start-up; executor logic TODO |
 | 7 | Retry topics and dead-letter topic | §8.3, §11 | ⬜ |
 | 8 | REST baseline endpoint | §13.1 | ⬜ |
 | 9 | Per-service database roles (least privilege) | §9.4, §12 | ⬜ |
@@ -40,6 +44,32 @@ and the pipeline recovered when Kafka came back.
 - Every attempt writes `audit.auth_audit`.
 
 **Done when:** a clinician can be created, log in, refresh and log out, and every step appears in `audit.auth_audit`.
+
+### Phase 1b: rest of build step 2 (§14.1: "a clinician can register, log in, and the login is auditable end to end") ✅
+
+- **Registration by facility admins** (role `admin`, everything scoped to the admin's facility from the token):
+  `POST /v1/admin/clinicians`, `GET /v1/admin/clinicians`, `POST /v1/admin/clinicians/{username}/unlock`,
+  `/deactivate` (also revokes every session) and `/reset-mfa`. Usernames are lower-case, passwords at least
+  12 characters. Clinicians of another facility are reported as 404, never 403.
+  The `create-clinician` command now goes through the same validation and audit, and is only needed to
+  bootstrap each facility's first admin.
+- **TOTP MFA** (RFC 6238, works with any authenticator app): `POST /v1/auth/mfa/enroll` → scan the
+  `otpauth://` URI → `POST /v1/auth/mfa/confirm` with a first code. Once confirmed, login needs `totp`:
+  no code → `MFA_REQUIRED` (not counted as a failure); a wrong code counts towards the 5-attempt lockout;
+  a code that was already accepted is refused (replay protection via `mfa_last_used_step`).
+  The secret is stored encrypted with AES-256-GCM, bound to the clinician id; the key is
+  `Secrets__EncryptionKey`, kept outside the database with the JWT signing key (§12).
+  Whether MFA is mandatory for some roles is still an open team decision (§15); it is opt-in for now.
+- **Patient display alias** (§9.1): `PUT /v1/patients/{patientRef}/alias`, `GET /v1/patients/{patientRef}`,
+  facility-scoped. Only pseudonyms (`p-…`) are accepted. The persister never touches the alias.
+- **Audit trail**: `audit.auth_audit` now also records REGISTER, UNLOCK, DEACTIVATE, MFA_ENROLL, MFA_CONFIRM
+  and MFA_RESET, with `actor_clinician_id` for actions an admin performs. Admins read their facility's
+  trail at `GET /v1/admin/auth-audit`.
+- Migrations: `clinical/0007_clinician_mfa.sql`, `audit/0003_auth_audit_admin_actions.sql`.
+
+**Verified:** `python tests/integration/e2e_step2_auth_admin.py` (44 checks) and the gateway unit tests
+(RFC 6238 test vectors, encryption binding). Known limit: a deactivated clinician's access token stays valid
+until it expires (at most 15 minutes); refresh is refused immediately.
 
 ## Phase 2: Push
 
