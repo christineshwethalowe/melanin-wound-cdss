@@ -1,12 +1,12 @@
 using Npgsql;
-using SyncGateway.Admin;
+using IdentityService.Admin;
 
-namespace SyncGateway.Auth;
+namespace IdentityService.Auth;
 
 /// <summary>
 /// Registers a clinician from the command line. Used to bootstrap the first admin of a facility and for
 /// local testing; after that, admins register clinicians through POST /v1/admin/clinicians.
-///   dotnet run --project backend/apps/sync/sync-gateway -- create-clinician &lt;username&gt; &lt;password&gt; &lt;role&gt; &lt;facilityId&gt; [full name]
+///   dotnet run --project backend/apps/identity-service -- create-clinician &lt;username&gt; &lt;password&gt; &lt;role&gt; &lt;facilityId&gt; [full name]
 /// Role is one of nurse, wound_specialist, admin. The facility must already exist.
 /// </summary>
 public static class CreateClinicianCommand

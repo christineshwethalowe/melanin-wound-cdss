@@ -19,7 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\apps\sync\sync-gateway\SyncGateway.csproj" />
+    <ProjectReference Include="..\..\apps\identity-service\IdentityService.csproj" />
   </ItemGroup>
 
 </Project>

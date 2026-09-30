@@ -1,7 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 
-namespace SyncGateway.Auth;
+namespace IdentityService.Auth;
 
 /// <summary>
 /// Encrypts small secrets (the TOTP seed) before they are stored, using AES-256-GCM. The key comes from

@@ -1,8 +1,9 @@
 using System.Security.Claims;
-using SyncGateway.Admin;
-using SyncGateway.Auth;
+using IdentityService.Admin;
+using IdentityService.Auth;
+using Sync.Common.Auth;
 
-namespace SyncGateway.Endpoints;
+namespace IdentityService.Endpoints;
 
 /// <summary>
 /// Facility admin endpoints (role "admin"). Everything is scoped to the admin's own facility, taken from the

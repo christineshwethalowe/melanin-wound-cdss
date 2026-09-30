@@ -39,11 +39,11 @@ What changes in the architecture: [architecture/v2.1-changes.md](architecture/v2
 | Step | What | Decision | Status |
 |------|------|----------|--------|
 | A1 | Decision records and v2.1 changes | 0003, 0004, 0005 | ✅ |
-| A2 | identity-service: move auth, MFA and admin out of the gateway; RS256; OIDC discovery + JWKS | 0003 | ⬜ |
-| A3 | Sync Gateway as resource server only (validates with cached JWKS) | 0003 | ⬜ |
+| A2 | identity-service: move auth, MFA and admin out of the gateway; RS256; OIDC discovery + JWKS | 0003 | ✅ |
+| A3 | Sync Gateway as resource server only (validates with cached JWKS) | 0003 | ✅ done with A2 (one would not run without the other) |
 | A4 | api-gateway (YARP): routing, rate limits, CORS, edge JWT check | 0004 | ⬜ |
 | A5 | Web-client sessions: `clinical/0008` adds `client_id`, nullable `device_id` for the dashboard | 0005 | ⬜ |
-| A6 | Wiring: docker-compose, `auth.schema.json`, integration tests through the edge | 0003, 0004 | ⬜ |
+| A6 | Wiring: docker-compose, `auth.schema.json`, integration tests through the edge | 0003, 0004 | ⬜ (identity-service already in compose on 8085; tests call it directly until A4) |
 | A7 | `frontend/admin_dashboard` (Flutter Web) | 0005 | ⬜ |
 | A8 | CI jobs and README | — | ⬜ |
 

@@ -1,7 +1,7 @@
 using System.Security.Cryptography;
-using SyncGateway.Auth;
+using IdentityService.Auth;
 
-namespace SyncGateway.Tests;
+namespace IdentityService.Tests;
 
 public class SecretProtectorTests
 {

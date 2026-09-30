@@ -115,12 +115,12 @@ services:
 
   seed-demo-users:
     <<: *backend
-    image: melanin-wound-cdss/sync-gateway
+    image: melanin-wound-cdss/identity-service
     build:
       <<: *backend-build
       args:
-        PROJECT: backend/apps/sync/sync-gateway/SyncGateway.csproj
-        ENTRY: SyncGateway.dll
+        PROJECT: backend/apps/identity-service/IdentityService.csproj
+        ENTRY: IdentityService.dll
     restart: "no"
     depends_on:
       db-migrate:
@@ -128,10 +128,30 @@ services:
     entrypoint: ["sh", "-c"]
     command:
       - |
-        dotnet SyncGateway.dll create-clinician admin.demo Demo-Admin-2026! admin fac-001 Demo Admin || true
-        dotnet SyncGateway.dll create-clinician n.silva Demo-Pass-2026! nurse fac-001 N. Silva || true
+        dotnet IdentityService.dll create-clinician admin.demo Demo-Admin-2026! admin fac-001 Demo Admin || true
+        dotnet IdentityService.dll create-clinician n.silva Demo-Pass-2026! nurse fac-001 N. Silva || true
 
   # ---- Member 4 backend units (§4) ------------------------------------------------------------
+
+  # Issues and signs every token (ADR 0003); other services fetch its public keys from /.well-known/jwks.json.
+  identity-service:
+    <<: *backend
+    image: melanin-wound-cdss/identity-service
+    build:
+      <<: *backend-build
+      args:
+        PROJECT: backend/apps/identity-service/IdentityService.csproj
+        ENTRY: IdentityService.dll
+    ports:
+      - "8085:8080"
+    environment:
+      <<: *backend-env
+      # Local development values. Without Jwt__SigningKeyPem a key is generated at start-up (restart = devices refresh).
+      Jwt__SigningKeyPem: ${Jwt__SigningKeyPem:-}
+      Secrets__EncryptionKey: ${Secrets__EncryptionKey:-local-dev-only-encryption-key-change-me-0123456}
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
 
   sync-gateway:
     <<: *backend
@@ -145,9 +165,11 @@ services:
       - "8080:8080"
     environment:
       <<: *backend-env
-      # Local development values; set real secrets via .env outside a laptop demo.
-      Jwt__SigningKey: ${Jwt__SigningKey:-local-dev-only-signing-key-change-me-0123456789}
-      Secrets__EncryptionKey: ${Secrets__EncryptionKey:-local-dev-only-encryption-key-change-me-0123456}
+      Jwt__MetadataAddress: "http://identity-service:8080/.well-known/openid-configuration"
+    depends_on:
+      <<: *backend-deps
+      identity-service:
+        condition: service_started
 
   ingest-persister:
     <<: *backend

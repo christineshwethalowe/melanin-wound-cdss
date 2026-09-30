@@ -1,8 +1,8 @@
 using System.Text.RegularExpressions;
 using Npgsql;
-using SyncGateway.Auth;
+using IdentityService.Auth;
 
-namespace SyncGateway.Admin;
+namespace IdentityService.Admin;
 
 public sealed record RegisterClinicianRequest(string Username, string Password, string FullName, string Role);
 

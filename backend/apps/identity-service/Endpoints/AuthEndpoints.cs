@@ -1,7 +1,8 @@
 using System.Security.Claims;
-using SyncGateway.Auth;
+using IdentityService.Auth;
+using Sync.Common.Auth;
 
-namespace SyncGateway.Endpoints;
+namespace IdentityService.Endpoints;
 
 public sealed record LoginRequest(string Username, string Password, string DeviceId, string? Totp);
 public sealed record RefreshRequest(string RefreshToken);

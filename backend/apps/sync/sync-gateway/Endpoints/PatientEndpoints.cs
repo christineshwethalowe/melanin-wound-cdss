@@ -1,7 +1,7 @@
 using System.Security.Claims;
 using System.Text.RegularExpressions;
 using Npgsql;
-using SyncGateway.Auth;
+using Sync.Common.Auth;
 
 namespace SyncGateway.Endpoints;
 

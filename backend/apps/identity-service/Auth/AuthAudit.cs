@@ -1,6 +1,6 @@
 using Npgsql;
 
-namespace SyncGateway.Auth;
+namespace IdentityService.Auth;
 
 /// <summary>Small SQL helper shared by the auth, admin and patient code.</summary>
 public static class Sql

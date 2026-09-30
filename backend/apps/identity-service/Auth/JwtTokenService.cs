@@ -3,8 +3,9 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
+using Sync.Common.Auth;
 
-namespace SyncGateway.Auth;
+namespace IdentityService.Auth;
 
 public sealed class JwtOptions
 {
@@ -13,22 +14,54 @@ public sealed class JwtOptions
     public int AccessTokenMinutes { get; set; } = 15;
     public int RefreshTokenDays { get; set; } = 30;
 
-    /// <summary>At least 32 characters. Override with the Jwt__SigningKey environment variable outside local dev.</summary>
-    public string SigningKey { get; set; } = "";
-
-    public SymmetricSecurityKey Key => new(Encoding.UTF8.GetBytes(SigningKey));
+    /// <summary>
+    /// RSA private key (PKCS#8 or PKCS#1 PEM) used to sign access tokens. Set Jwt__SigningKeyPem outside local dev.
+    /// When empty, a new key is generated at start-up: fine for a laptop, but every restart invalidates
+    /// access tokens (devices simply refresh) and replicas would not share a key.
+    /// </summary>
+    public string SigningKeyPem { get; set; } = "";
 }
 
-public static class ClaimNames
+/// <summary>
+/// The RS256 signing key (ADR 0003). Only the identity service holds the private half; resource servers
+/// fetch the public half from /.well-known/jwks.json and validate tokens locally.
+/// </summary>
+public sealed class SigningKey
 {
-    public const string Subject = "sub";
-    public const string DeviceId = "device_id";
-    public const string FacilityId = "facility_id";
-    public const string Role = "role";
+    public RsaSecurityKey PrivateKey { get; }
+    public RsaSecurityKey PublicKey { get; }
+    public bool IsEphemeral { get; }
+
+    public SigningKey(string pem)
+    {
+        var rsa = RSA.Create(2048);
+        IsEphemeral = string.IsNullOrWhiteSpace(pem);
+        if (!IsEphemeral) rsa.ImportFromPem(pem);
+
+        var publicKey = new RsaSecurityKey(rsa.ExportParameters(false));
+        var kid = Base64UrlEncoder.Encode(publicKey.ComputeJwkThumbprint());
+        PublicKey = new RsaSecurityKey(rsa.ExportParameters(false)) { KeyId = kid };
+        PrivateKey = new RsaSecurityKey(rsa) { KeyId = kid };
+    }
+
+    /// <summary>The public key as a JWK, as published in the JWKS.</summary>
+    public object ToJwk()
+    {
+        var p = PublicKey.Parameters;
+        return new
+        {
+            kty = "RSA",
+            use = "sig",
+            alg = SecurityAlgorithms.RsaSha256,
+            kid = PublicKey.KeyId,
+            n = Base64UrlEncoder.Encode(p.Modulus),
+            e = Base64UrlEncoder.Encode(p.Exponent),
+        };
+    }
 }
 
 /// <summary>Issues the short-lived access JWT and the opaque refresh token (architecture §7.3).</summary>
-public sealed class JwtTokenService(JwtOptions options)
+public sealed class JwtTokenService(JwtOptions options, SigningKey key)
 {
     private readonly JsonWebTokenHandler _handler = new();
 
@@ -41,7 +74,7 @@ public sealed class JwtTokenService(JwtOptions options)
             Issuer = options.Issuer,
             Audience = options.Audience,
             Expires = DateTime.UtcNow.AddMinutes(options.AccessTokenMinutes),
-            SigningCredentials = new SigningCredentials(options.Key, SecurityAlgorithms.HmacSha256),
+            SigningCredentials = new SigningCredentials(key.PrivateKey, SecurityAlgorithms.RsaSha256),
             Subject = new ClaimsIdentity(
             [
                 new Claim(ClaimNames.Subject, clinicianId.ToString()),

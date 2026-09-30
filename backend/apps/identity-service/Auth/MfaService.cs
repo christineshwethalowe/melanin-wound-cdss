@@ -1,6 +1,6 @@
 using Npgsql;
 
-namespace SyncGateway.Auth;
+namespace IdentityService.Auth;
 
 public sealed record MfaEnrollment(string Secret, string OtpAuthUri);
 

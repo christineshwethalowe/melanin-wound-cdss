@@ -12,6 +12,8 @@ import urllib.error
 import urllib.request
 
 GATEWAY = os.environ.get("GATEWAY", "http://localhost:8080")
+IDENTITY = os.environ.get("IDENTITY", "http://localhost:8085")
+IDENTITY_PATHS = ("/v1/auth/", "/v1/admin/", "/.well-known/")
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 
@@ -42,7 +44,8 @@ def uuid7():
 
 
 def http(method, path, body=None, token=None):
-    req = urllib.request.Request(GATEWAY + path, method=method)
+    base = IDENTITY if path.startswith(IDENTITY_PATHS) else GATEWAY
+    req = urllib.request.Request(base + path, method=method)
     req.add_header("Content-Type", "application/json")
     if token:
         req.add_header("Authorization", f"Bearer {token}")
@@ -72,9 +75,9 @@ def wait_for(query, expected, seconds=20):
 
 
 def create_clinician(username, password, role, facility, full_name="Test User"):
-    """Uses the gateway's create-clinician command (the bootstrap path for a facility's first admin)."""
+    """Uses the identity service's create-clinician command (the bootstrap path for a facility's first admin)."""
     out = subprocess.run(
-        ["dotnet", "run", "--no-build", "--project", "backend/apps/sync/sync-gateway", "--",
+        ["dotnet", "run", "--no-build", "--project", "backend/apps/identity-service", "--",
          "create-clinician", username, password, role, facility, full_name],
         cwd=REPO_ROOT, capture_output=True, text=True)
     if out.returncode != 0:

@@ -1,13 +1,13 @@
 """
 End-to-end smoke test for plan phases 1-5 (docs/member4-backend-plan.md).
 
-Needs: docker compose stack up, migrations applied, a clinician created, and the gateway (port 8080),
+Needs: docker compose stack up, migrations applied, a clinician created, the identity service (port 8085), the gateway (port 8080),
 ingest persister and outbox relay running.
 
     python tests/integration/e2e_smoke.py
 
 Test clinician (local dev only), created with:
-    dotnet run --project backend/apps/sync/sync-gateway -- create-clinician n.silva Demo-Pass-2026! nurse fac-001 N. Silva
+    dotnet run --project backend/apps/identity-service -- create-clinician n.silva Demo-Pass-2026! nurse fac-001 N. Silva
 """
 import os
 import sys

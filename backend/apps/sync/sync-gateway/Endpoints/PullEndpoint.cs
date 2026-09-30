@@ -1,6 +1,6 @@
 using System.Text.Json;
 using Npgsql;
-using SyncGateway.Auth;
+using Sync.Common.Auth;
 
 namespace SyncGateway.Endpoints;
 

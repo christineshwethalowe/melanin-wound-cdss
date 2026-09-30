@@ -1,6 +1,9 @@
 <Solution>
   <Folder Name="/backend/" />
   <Folder Name="/backend/apps/" />
+  <Folder Name="/backend/apps/identity-service/">
+    <Project Path="backend/apps/identity-service/IdentityService.csproj" />
+  </Folder>
   <Folder Name="/backend/apps/ingestion-pipeline/">
     <Project Path="backend/apps/ingestion-pipeline/IngestionPipeline.csproj" />
   </Folder>
@@ -25,7 +28,7 @@
   </Folder>
   <Folder Name="/backend/tests/">
     <Project Path="backend/tests/Sync.Common.Tests/Sync.Common.Tests.csproj" />
-    <Project Path="backend/tests/SyncGateway.Tests/SyncGateway.Tests.csproj" />
+    <Project Path="backend/tests/IdentityService.Tests/IdentityService.Tests.csproj" />
   </Folder>
   <Folder Name="/backend/tests/rag-stub/">
     <Project Path="backend/tests/rag-stub/RagStub.csproj" />

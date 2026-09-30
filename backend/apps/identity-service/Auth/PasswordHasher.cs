@@ -2,7 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Konscious.Security.Cryptography;
 
-namespace SyncGateway.Auth;
+namespace IdentityService.Auth;
 
 /// <summary>Argon2id with a per-credential salt (architecture §12). Never reversible encryption.</summary>
 public sealed class PasswordHasher
