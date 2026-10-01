@@ -36,12 +36,12 @@ public static class ExpectedSchemaVersions
     public static readonly IReadOnlyDictionary<string, int> All = new Dictionary<string, int>
     {
         ["clinical"] = 8,
-        ["messaging"] = 1,
+        ["messaging"] = 2,
         ["audit"] = 4,
-        ["sync"] = 1,
+        ["sync"] = 2,
         ["baseline"] = 1,
         ["ablation"] = 1,
-        ["_roles"] = 1,
-        ["grants"] = 4,
+        ["_roles"] = 2,
+        ["grants"] = 5,
     };
 }

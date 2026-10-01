@@ -125,7 +125,7 @@ section("§4 / v2.1: deployable units and the single entry point")
 states = compose("ps", "-a", "--format", "{{.Service}} {{.State}}").stdout
 running = {l.split()[0] for l in states.splitlines() if l.endswith("running")}
 expected = {"api-gateway", "identity-service", "sync-gateway", "ingest-persister", "outbox-relay", "orchestrator",
-            "kafka", "postgres", "rag-stub"}
+            "housekeeping", "kafka", "postgres", "rag-stub"}
 check("every deployable unit is running", expected <= running, f"missing {expected - running}")
 for port, name in [(8085, "identity-service"), (8086, "sync-gateway")]:
     with socket.socket() as s:
@@ -252,12 +252,19 @@ check("no event stored twice (unique event_id)",
       sql("select count(*) from (select event_id from clinical.wound_assessment group by 1 having count(*) > 1) x") == "0")
 check("no (assessment_id, revision) stored twice",
       sql("select count(*) from (select 1 from clinical.wound_assessment group by assessment_id, revision having count(*) > 1) x") == "0")
+# Housekeeping (§9.4) archives change-log rows every cursor has passed and deletes outbox rows an hour after
+# publishing, so the change-log row may be in the archive and the outbox row is only checked for recent assessments.
 check("every stored assessment has PERSISTED provenance, a change-log row and an outbox row (one transaction)",
       sql("""select count(*) from clinical.wound_assessment wa
              where not exists (select 1 from audit.provenance p where p.event_id = wa.event_id and p.stage = 'PERSISTED')
                 or not exists (select 1 from sync.change_log c where c.assessment_id = wa.assessment_id
+                               and c.revision = wa.revision and c.change_type = 'PERSISTED'
+                               union all
+                               select 1 from sync.change_log_archive c where c.assessment_id = wa.assessment_id
                                and c.revision = wa.revision and c.change_type = 'PERSISTED')
-                or not exists (select 1 from messaging.outbox o where o.payload->>'eventId' = wa.event_id::text)""") == "0")
+                or (wa.received_at > now() - interval '30 minutes'
+                    and not exists (select 1 from messaging.outbox o where o.payload->>'eventId' = wa.event_id::text))""")
+      == "0")
 check("the patient alias never travels the sync path (no display alias in outbox payloads)",
       sql("select count(*) from messaging.outbox where payload::text ilike '%displayAlias%'") == "0")
 

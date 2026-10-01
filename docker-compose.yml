@@ -15,7 +15,8 @@ x-backend: &backend
   # The owner login below is used only by db-migrate. Every service overrides it with its own role (plan phase 9,
   # db/migrations/_roles and grants); passwords are local-dev defaults, set real ones in .env.
   # Pool sizes are bounded so all services together stay under PostgreSQL's 100 connections, even with the
-  # persister and relay scaled to two replicas: identity 20, gateway 30, persister 10, relay 5, orchestrator 10.
+  # persister and relay scaled to two replicas: identity 20, gateway 30, persister 10, relay 5, orchestrator 10,
+  # housekeeping 2.
   environment: &backend-env
     ConnectionStrings__Postgres: "Host=postgres;Username=${POSTGRES_USER:-cdss};Password=${POSTGRES_PASSWORD:-cdss};Database=${POSTGRES_DB:-cdss}"
     Kafka__BootstrapServers: "kafka:9092"
@@ -126,6 +127,7 @@ services:
       ServiceRoles__relay_svc: ${DB_PASSWORD_RELAY:-relay-local-dev}
       ServiceRoles__orchestrator_svc: ${DB_PASSWORD_ORCHESTRATOR:-orchestrator-local-dev}
       ServiceRoles__rag_svc: ${DB_PASSWORD_RAG:-rag-local-dev}
+      ServiceRoles__housekeeping_svc: ${DB_PASSWORD_HOUSEKEEPING:-housekeeping-local-dev}
     depends_on:
       postgres:
         condition: service_healthy
@@ -239,6 +241,21 @@ services:
     environment:
       <<: *backend-env
       ConnectionStrings__Postgres: "Host=postgres;Database=${POSTGRES_DB:-cdss};Username=relay_svc;Password=${DB_PASSWORD_RELAY:-relay-local-dev};Maximum Pool Size=5"
+
+  # Outbox cleanup, change-log archival and inbox retention (§9.4). One cycle every 10 minutes; one instance is
+  # enough (an advisory lock keeps extra replicas idle). Run a cycle by hand:
+  #   docker compose run --rm housekeeping run-once
+  housekeeping:
+    <<: *backend
+    image: melanin-wound-cdss/housekeeping
+    build:
+      <<: *backend-build
+      args:
+        PROJECT: backend/apps/sync/housekeeping/Housekeeping.csproj
+        ENTRY: Housekeeping.dll
+    environment:
+      <<: *backend-env
+      ConnectionStrings__Postgres: "Host=postgres;Database=${POSTGRES_DB:-cdss};Username=housekeeping_svc;Password=${DB_PASSWORD_HOUSEKEEPING:-housekeeping-local-dev};Maximum Pool Size=2"
 
   orchestrator:
     <<: *backend

@@ -138,6 +138,10 @@ dotnet run --project tests/device-simulator -- --devices 10 --events 20
 docker compose --profile tools up -d toxiproxy
 python tests/evaluation/run_experiment.py loss --devices 10 --events 10
 
+# housekeeping (§9.4): outbox cleanup, change-log archival (no device misses a change), inbox retention
+python tests/integration/e2e_housekeeping.py
+docker compose run --rm housekeeping run-once   # one cycle by hand; prints what it removed
+
 # per-service database roles: insert-only audit, credentials readable only by the identity service
 python tests/integration/e2e_db_roles.py
 
@@ -162,7 +166,8 @@ Outside local development, set these for the identity service instead of using t
 
 Each service logs in to PostgreSQL with its own least-privilege role (plan phase 9). Docker uses local-dev
 passwords; outside a laptop demo set `DB_PASSWORD_IDENTITY`, `DB_PASSWORD_GATEWAY`, `DB_PASSWORD_PERSISTER`,
-`DB_PASSWORD_RELAY`, `DB_PASSWORD_ORCHESTRATOR` and `DB_PASSWORD_RAG` in `.env`; db-migrate applies them.
+`DB_PASSWORD_RELAY`, `DB_PASSWORD_ORCHESTRATOR`, `DB_PASSWORD_RAG` and `DB_PASSWORD_HOUSEKEEPING` in `.env`;
+db-migrate applies them.
 
 Progress and next steps for the backend: [docs/member4-backend-plan.md](docs/member4-backend-plan.md)
 

@@ -112,6 +112,37 @@ until it expires (at most 15 minutes); refresh is refused immediately.
 **Verified:** `python tests/integration/e2e_device_revocation.py` (21 checks), plus 5 new checks in
 `e2e_db_roles.py` for the column grants.
 
+### Phase 1d: housekeeping (§9.4: outbox, change log and inbox are short-lived by design) ✅
+
+A separate worker, `backend/apps/sync/housekeeping`, with its own database login `housekeeping_svc`. One cycle every
+10 minutes, in batches of 5,000 rows. An advisory lock means that if it is ever scaled out, only one instance works at
+a time. `docker compose run --rm housekeeping run-once` runs one cycle by hand.
+
+| Table | Rule | Default |
+|---|---|---|
+| `messaging.outbox` | Published rows older than the retention are deleted. Unpublished rows are never touched. | 1 hour |
+| `sync.change_log` | Moved to `sync.change_log_archive` once **every device of the facility that is not revoked** has a cursor at or past the row (a device that has never pulled counts as 0), and the row is older than the margin | 24 hours (minimum 10 minutes, far above pull's 60 s re-send window) |
+| `messaging.inbox` | Rows older than the redelivery window are deleted. The window is read from Kafka: the longest `retention.ms` of the topics the orchestrator reads (persisted, both retry topics, DLQ) plus one day, never less than the configured minimum. If Kafka cannot be asked, or a topic is kept forever, nothing is deleted. | 8 days (Kafka's 7 + 1) |
+
+- Why no device can miss a change: pull returns rows after the cursor the device sends, and the server records that
+  cursor (`sync.device_cursor`). A row is archived only when it is at or below every active device's recorded cursor,
+  so every one of them has already applied it. The margin also covers rows that commit out of sequence order.
+- A phone that has stopped syncing holds its facility's archival back. Each cycle logs which device it is ("revoke it
+  if the phone is lost"); revoking it (phase 1c) releases the rows. A phone enrolled later starts from the archival
+  point: it does not receive the ward's archived history.
+- Metric `sync_housekeeping_rows_total{table}` (outbox, change_log, inbox).
+- Migrations: `_roles/0002` (role), `messaging/0002` (age indexes), `sync/0002` (archive table), `grants/0005`
+  (housekeeping may delete outbox/inbox/change-log rows and read only the columns its rules use; no payloads,
+  no clinical data, cannot change devices or the archive).
+- First run on the development database: the 18,611 published outbox rows were deleted. No inbox row was older than
+  8 days. No change-log row was archived, because test devices that never pulled still hold `fac-001`, as the
+  rule intends.
+
+**Verified:** `python tests/integration/e2e_housekeeping.py` (21 checks: a lost phone holds archival back until it is
+revoked; only rows every phone acknowledged are archived; the phone behind resumes and receives every later row;
+a whole-database check finds no archived row ahead of any active device's cursor; outbox and inbox rules).
+16 new checks in `e2e_db_roles.py`, 8 unit tests in `Housekeeping.Tests` (retention policy, option validation).
+
 ## Phase 2: Push
 
 - `POST /v1/sync/push` needs a JWT. Body: `{ deviceId, batchId, events[] }`.
@@ -223,7 +254,7 @@ Recommendation Service the baseline makes the device wait 3 s while push answers
 - One login role per service. `audit.provenance` and `audit.auth_audit` are insert-only.
   Only the identity service can read `clinical.clinician_credential` (v2.1: was the gateway). The `rag` role sees only `rag`.
 
-✅ **Verified:** `python tests/integration/e2e_db_roles.py` (68 checks: each service is connected under its own role;
+✅ **Verified:** `python tests/integration/e2e_db_roles.py` (84 checks: each service is connected under its own role;
 only `identity_svc` reads credentials; nobody can UPDATE, DELETE or TRUNCATE the audit tables; `rag_svc` sees only
 `rag`; column-level writes such as the orchestrator changing only `wound_assessment.status`). Every other suite
 passes with the services running under these roles, which shows the grants are sufficient.
