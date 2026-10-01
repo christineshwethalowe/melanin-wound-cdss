@@ -132,8 +132,11 @@ try:
     # --------------------------------------------------------------------------------------------------------
     print("\n§11: replaying wound-events.persisted stores nothing twice")
     time.sleep(3)
-    recs_before = one("select count(*) from clinical.recommendation")
-    rag_before = one("select count(*) from audit.provenance where stage = 'RAG_RETURNED'")
+    # Only events that already had an answer must be left alone. Events that never finished (e.g. sent to the DLQ
+    # earlier) are legitimately completed by a replay, so global totals are not a valid measure.
+    cutoff = one("select now()")
+    answered = f"(select event_id from audit.provenance where stage = 'RAG_RETURNED' and recorded_at < '{cutoff}')"
+    rag_before = one(f"select count(*) from audit.provenance where stage = 'RAG_RETURNED' and event_id in {answered}")
     compose("stop", "orchestrator")
     kafka("/opt/kafka/bin/kafka-consumer-groups.sh", "--bootstrap-server", "localhost:9092", "--group", "orchestrator",
           "--reset-offsets", "--to-earliest", "--topic", "wound-events.persisted", "--execute")
@@ -146,9 +149,15 @@ try:
         return len(rows) == 6 and all(r[5] == "0" for r in rows)
 
     check("orchestrator works through the whole topic again", wait(drained, 300, 3))
-    check("no recommendation stored twice", one("select count(*) from clinical.recommendation") == recs_before, recs_before)
-    check("the Recommendation Service was not asked again (inbox stops repeats before CallRag)",
-          one("select count(*) from audit.provenance where stage = 'RAG_RETURNED'") == rag_before, rag_before)
+    check("events that already had an answer: the Recommendation Service was not asked again (inbox stops repeats)",
+          one(f"select count(*) from audit.provenance where stage = 'RAG_RETURNED' and event_id in {answered}") == rag_before,
+          rag_before)
+    check("no event anywhere has two Recommendation Service answers",
+          one("select count(*) from (select event_id from audit.provenance where stage = 'RAG_RETURNED' "
+              "group by 1 having count(*) > 1) x") == "0")
+    check("no (assessment, revision) has two recommendations",
+          one("select count(*) from (select 1 from clinical.recommendation group by assessment_id, revision "
+              "having count(*) > 1) x") == "0")
 
     # --------------------------------------------------------------------------------------------------------
     print("\n§11: orchestrator killed in the middle of a Recommendation Service call")

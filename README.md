@@ -103,6 +103,9 @@ python tests/integration/e2e_dashboard_client.py
 # Disruptive (restarts the rag-stub and the orchestrator); Docker stack only.
 python tests/integration/e2e_orchestrator.py
 
+# retry topics: delayed redelivery without head-of-line blocking, then the DLQ. Disruptive, about 2 minutes.
+python tests/integration/e2e_retry.py
+
 # whole stack against the architecture, section by section, including §11 failures.
 # Disruptive (stops Kafka, replays the topic, scales services); Docker stack only, takes a few minutes.
 python tests/integration/e2e_architecture.py

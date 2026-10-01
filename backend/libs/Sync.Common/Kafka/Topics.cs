@@ -15,6 +15,8 @@ public static class ConsumerGroups
 {
     public const string Persister = "persister";
     public const string Orchestrator = "orchestrator";
+    /// <summary>Delayed retries (§8.3), kept apart so pausing for minutes never stalls the main orchestrator consumer.</summary>
+    public const string OrchestratorRetry = "orchestrator-retry";
     public const string GatewayNotifier = "gateway-notifier";
 }
 

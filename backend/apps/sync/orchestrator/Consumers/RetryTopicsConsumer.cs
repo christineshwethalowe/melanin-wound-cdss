@@ -1,21 +1,107 @@
+using Confluent.Kafka;
+using Orchestrator.Graph;
 using Sync.Common.Kafka;
 
 namespace Orchestrator.Consumers;
 
 /// <summary>
-/// Delayed redelivery (architecture §8.1, §8.3): consumes wound-events.retry.30s and .retry.5m (group
-/// "orchestrator"). For each message it pauses that partition until message timestamp + RetryRouting.DelayFor
-/// has passed, then runs the same workflow. A failure moves it one hop further (RetryRouting.NextHop), ending
-/// in wound-events.dlq for the manual replay tool. This — not partitioning alone — removes head-of-line blocking.
+/// Delayed redelivery (architecture §8.1, §8.3): consumes wound-events.retry.30s and .retry.5m. A message is
+/// processed once its timestamp + the topic's delay has passed; until then only its partition is paused, so other
+/// partitions and the main consumer keep moving. It then runs the same workflow; a failure moves it one hop
+/// further (<see cref="RetryRouting.NextHop"/>), ending in wound-events.dlq. This, not partitioning alone, is what
+/// removes head-of-line blocking.
+///
+/// Uses its own consumer group (<see cref="ConsumerGroups.OrchestratorRetry"/>) so pausing for minutes, or a
+/// rebalance here, never stalls the main orchestrator consumer.
 /// </summary>
-public sealed class RetryTopicsConsumer(ILogger<RetryTopicsConsumer> logger) : BackgroundService
+public sealed class RetryTopicsConsumer(
+    WorkflowRunner runner, OutcomeRouter router, IConfiguration config, ILogger<RetryTopicsConsumer> logger)
+    : BackgroundService
 {
     public static readonly string[] RetryTopics = [Topics.Retry30s, Topics.Retry5m];
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override Task ExecuteAsync(CancellationToken stoppingToken) =>
+        Task.Factory.StartNew(() => RunAsync(stoppingToken), stoppingToken, TaskCreationOptions.LongRunning,
+            TaskScheduler.Default).Unwrap();
+
+    /// <summary>The delay for a retry topic; overridable (Retry:FirstDelaySeconds / Retry:SecondDelaySeconds) for tests.</summary>
+    public TimeSpan DelayFor(string topic) => topic switch
     {
-        logger.LogInformation("Retry consumer for {Topics} is plan phase 7", string.Join(", ", RetryTopics));
-        // TODO(phase 7): subscribe to RetryTopics; consumer.Pause/Resume per partition around the delay.
-        await Task.Delay(Timeout.Infinite, stoppingToken);
+        Topics.Retry30s when config.GetValue<double?>("Retry:FirstDelaySeconds") is { } s => TimeSpan.FromSeconds(s),
+        Topics.Retry5m when config.GetValue<double?>("Retry:SecondDelaySeconds") is { } s => TimeSpan.FromSeconds(s),
+        _ => RetryRouting.DelayFor(topic),
+    };
+
+    /// <summary>When a message read from <paramref name="topic"/> may be processed.</summary>
+    public static DateTimeOffset DueAt(Timestamp timestamp, TimeSpan delay) =>
+        DateTimeOffset.FromUnixTimeMilliseconds(timestamp.UnixTimestampMs) + delay;
+
+    private async Task RunAsync(CancellationToken ct)
+    {
+        var bootstrap = config["Kafka:BootstrapServers"] ?? KafkaDefaults.DefaultBootstrapServers;
+        var paused = new Dictionary<TopicPartition, DateTimeOffset>();
+
+        using var consumer = new ConsumerBuilder<string, byte[]>(
+                KafkaDefaults.Consumer(bootstrap, ConsumerGroups.OrchestratorRetry))
+            // A partition we paused and then lost in a rebalance must not stay on our list.
+            .SetPartitionsRevokedHandler((_, revoked) => { foreach (var p in revoked) paused.Remove(p.TopicPartition); })
+            .Build();
+        consumer.Subscribe(RetryTopics);
+        logger.LogInformation("Retry consumer on {Topics} as group {Group} (delays {First} / {Second})",
+            string.Join(", ", RetryTopics), ConsumerGroups.OrchestratorRetry, DelayFor(Topics.Retry30s), DelayFor(Topics.Retry5m));
+
+        while (!ct.IsCancellationRequested)
+        {
+            ResumeDuePartitions(consumer, paused);
+
+            ConsumeResult<string, byte[]>? result;
+            try
+            {
+                // Short timeout: wake up regularly to resume partitions whose delay has passed. Calling Consume
+                // also keeps the consumer in its group while partitions are paused.
+                result = consumer.Consume(TimeSpan.FromSeconds(1));
+            }
+            catch (OperationCanceledException) { break; }
+            catch (ConsumeException ex)
+            {
+                logger.LogWarning(ex, "Consume failed; retrying");
+                continue;
+            }
+            if (result is null) continue;
+
+            var due = DueAt(result.Message.Timestamp, DelayFor(result.Topic));
+            if (due > DateTimeOffset.UtcNow)
+            {
+                // Messages in a partition are in timestamp order, so nothing behind this one is due either.
+                consumer.Pause([result.TopicPartition]);
+                consumer.Seek(result.TopicPartitionOffset);
+                paused[result.TopicPartition] = due;
+                continue;
+            }
+
+            try
+            {
+                await PersistedEventsConsumer.ProcessAsync(result, runner, router, logger, ct);
+                consumer.Commit(result);
+            }
+            catch (OperationCanceledException) { break; }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Could not finish {Ref}; will redeliver", result.TopicPartitionOffset.KafkaRef());
+                consumer.Seek(result.TopicPartitionOffset);
+                await Task.Delay(TimeSpan.FromSeconds(5), ct);
+            }
+        }
+
+        consumer.Close();
+    }
+
+    private static void ResumeDuePartitions(IConsumer<string, byte[]> consumer, Dictionary<TopicPartition, DateTimeOffset> paused)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var ready = paused.Where(p => p.Value <= now).Select(p => p.Key).ToList();
+        if (ready.Count == 0) return;
+        consumer.Resume(ready);
+        foreach (var p in ready) paused.Remove(p);
     }
 }

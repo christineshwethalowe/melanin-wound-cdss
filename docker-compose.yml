@@ -39,6 +39,9 @@ services:
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      # Keep the log on the kafka-data volume. Without this the image writes to /tmp/kafka-logs inside the
+      # container, and recreating the container silently drops every message not yet consumed.
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
       # Demo only: replication factor 1. Do not claim durability under broker loss (§8.2).
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
@@ -217,6 +220,9 @@ services:
     environment:
       <<: *backend-env
       RecommendationService__BaseUrl: "http://rag-stub:8080"
+      # Retry topic delays (§8.3). Defaults 30 s and 5 min; tests shorten them.
+      Retry__FirstDelaySeconds: ${RETRY_FIRST_DELAY_SECONDS:-30}
+      Retry__SecondDelaySeconds: ${RETRY_SECOND_DELAY_SECONDS:-300}
 
   # Stand-in for Member 3's Recommendation Service until the real one is ready (§13.1).
   rag-stub:

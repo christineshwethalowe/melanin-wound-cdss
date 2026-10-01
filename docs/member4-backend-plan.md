@@ -23,8 +23,8 @@ and the pipeline recovered when Kafka came back.
 | 3 | Ingest persister: Kafka → PostgreSQL, idempotent | §9.3, §9.4 | ✅ |
 | 4 | Outbox relay: PostgreSQL → Kafka | §4, §9.3 | ✅ |
 | 5 | Pull endpoint: change log → device | §7.2 | ✅ |
-| 6 | Orchestrator workflow + Recommendation Service stub | §10 | ✅ (failures are routed to the retry topics; consuming them is phase 7) |
-| 7 | Retry topics and dead-letter topic | §8.3, §11 | ⬜ |
+| 6 | Orchestrator workflow + Recommendation Service stub | §10 | ✅ |
+| 7 | Retry topics and dead-letter topic | §8.3, §11 | ✅ |
 | 8 | REST baseline endpoint | §13.1 | ⬜ |
 | 9 | Per-service database roles (least privilege) | §9.4, §12 | ⬜ |
 | 10 | Evaluation harness: device simulator, faults, metrics | §13 | ⬜ |
@@ -161,6 +161,16 @@ through DELIVERED, superseded revision, topic replay, worker killed mid-call, 50
 - On a transient failure: copy to `retry.30s`, then `retry.5m`, then `dlq`; commit the original offset.
 - Retry consumers pause their partition until the message's delay has passed.
 - 422/409 from the Recommendation Service go straight to the DLQ.
+
+✅ **Verified:** `python tests/integration/e2e_retry.py` (13 checks: a deferred event recovers after its delay while a
+newer event goes straight through; an event that keeps failing goes retry.30s → retry.5m → dlq with its history
+in the headers) and `RetryRoutingTests`.
+
+- The retry consumer uses its own group, `orchestrator-retry`, so a paused partition or a rebalance there never
+  stalls the main orchestrator consumer.
+- Delays default to 30 s and 5 min; `Retry__FirstDelaySeconds` / `Retry__SecondDelaySeconds` shorten them for tests.
+- The persister keeps seek-and-redeliver for database errors: §8.1 gives the retry topics to the orchestrator only,
+  and while the database is down no event can be persisted anyway.
 
 ## Phase 8: REST baseline
 
