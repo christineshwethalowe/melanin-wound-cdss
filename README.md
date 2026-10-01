@@ -70,16 +70,32 @@ docker compose down -v                                 # stop and delete Kafka +
 
 After changing backend code, run `docker compose up -d --build` again.
 
+### Run from VS Code (F5)
+
+The repository includes `.vscode/launch.json` and `tasks.json`:
+
+1. Run the task **infrastructure: up** (Terminal → Run Task). If the full stack is already running in Docker,
+   run **infrastructure: stop backend containers** first so ports 8080, 8085 and 8086 are free.
+2. Choose **Backend: all services** in Run and Debug and press F5. It builds once, then starts the identity service
+   (8085), sync-gateway (8086), API gateway (8080, the URL clients use), ingest persister, outbox relay and
+   orchestrator, each with the debugger attached. To start one service on its own, build first (Ctrl+Shift+B).
+3. Run the task **test: e2e smoke**, or launch **device simulator**.
+
+Tasks also cover the unit tests and the observability stack (**observability: up**).
+
 ### Services with `dotnet run` (for development)
 
 Requirements: Docker, .NET 10 SDK, Flutter 3.x (for the mobile app).
 
+No `.env` is needed: every setting has a local-dev default in `docker-compose.yml` (`${NAME:-default}`). To
+override one, put it in a local `.env` (never committed), e.g. `DB_PASSWORD_GATEWAY=...`. The `dotnet run` services
+read `appsettings.json`, which expects the PostgreSQL login `cdss`/`cdss`: if you set `POSTGRES_PASSWORD`, change
+those files too.
+
 ```bash
-cp .env.example .env
-docker compose up -d kafka postgres kafka-ui   # infrastructure only
+# infrastructure: Kafka + topics, Postgres + migrations + demo users, the Recommendation Service stub
+docker compose up -d kafka postgres kafka-ui kafka-init db-migrate seed-demo-users rag-stub
 docker compose --profile tools up -d           # optional: Toxiproxy, OTel collector, Jaeger, Prometheus, Grafana
-bash infra/kafka/create-topics.sh              # create the topics
-dotnet run --project backend/tools/db-migrator # apply db/migrations
 dotnet build MelaninWoundCdss.slnx
 
 # local test clinician (dev only). Bootstrap one admin per facility this way; the admin then

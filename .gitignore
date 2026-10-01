@@ -34,7 +34,11 @@ appsettings.Development.json
 .DS_Store
 Thumbs.db
 .idea/
-.vscode/
+# Personal VS Code settings stay local; the shared run/debug setup is tracked.
+.vscode/*
+!.vscode/launch.json
+!.vscode/tasks.json
+!.vscode/extensions.json
 
 # Local run logs
 .logs/
