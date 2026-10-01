@@ -28,6 +28,7 @@ public sealed class GatewayClient(HttpClient http, string deviceId, string usern
         {
             using var response = await http.PostAsJsonAsync("v1/auth/login", new { username, password, deviceId }, ct);
             // The API gateway rate-limits login per IP (ADR 0004); all simulated phones share this host's IP.
+            // 5xx: the identity service or the network is having a moment; the caller backs off and retries.
             if (response.StatusCode == HttpStatusCode.TooManyRequests && attempt < 5)
             {
                 await Task.Delay(response.Headers.RetryAfter?.Delta ?? TimeSpan.FromSeconds(10), ct);

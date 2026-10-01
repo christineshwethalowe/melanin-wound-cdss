@@ -18,22 +18,41 @@ public sealed class SimulatedDevice(string deviceId, GatewayClient gateway, Even
     public int Pulls { get; private set; }
 
     private readonly Backoff _backoff = new(random);
-    private long _cursor;
+    private long _cursor = options.StartCursor;
 
     public async Task RunAsync(CancellationToken ct)
     {
-        await gateway.LoginAsync(ct);
+        // Capture never needs the network (§12): the clinician keeps working while login retries.
         var capturing = CaptureAsync(ct);
+        while (!await TryAsync(() => gateway.LoginAsync(ct), ct)) { }
 
         while (!ct.IsCancellationRequested)
         {
-            if (options.Mode == SimMode.Baseline) await BaselineStepAsync(ct);
-            else await SyncStepAsync(ct);
+            await TryAsync(() => options.Mode == SimMode.Baseline ? BaselineStepAsync(ct) : SyncStepAsync(ct), ct);
 
             if (capturing.IsCompleted && Queue.AllFinal()) break;
             await Task.Delay(options.PollInterval, ct);
         }
         await capturing;
+    }
+
+    /// <summary>
+    /// Runs one network step. A transport failure or a failed login mid-step (connection reset, gateway unreachable)
+    /// never stops the device: leased rows return to PENDING when their lease lapses and it backs off (§6.2).
+    /// </summary>
+    private async Task<bool> TryAsync(Func<Task> step, CancellationToken ct)
+    {
+        try
+        {
+            await step();
+            return true;
+        }
+        catch (Exception ex) when (!ct.IsCancellationRequested &&
+                                   ex is HttpRequestException or TaskCanceledException or InvalidOperationException or IOException)
+        {
+            await Task.Delay(_backoff.NextDelay(), ct);
+            return false;
+        }
     }
 
     /// <summary>The clinician saves assessments; each one commits to the queue before anything else (§6).</summary>
@@ -48,17 +67,28 @@ public sealed class SimulatedDevice(string deviceId, GatewayClient gateway, Even
 
     private async Task SyncStepAsync(CancellationToken ct)
     {
+        // Reachability probe once per sync run, before pushing (§6.2).
+        if (Queue.HasWorkToSend() && !await gateway.HealthAsync(ct))
+        {
+            await Task.Delay(_backoff.NextDelay(), ct);
+            return;
+        }
+
         while (Queue.HasWorkToSend() && !ct.IsCancellationRequested)
         {
-            if (!await gateway.HealthAsync(ct))
-            {
-                await Task.Delay(_backoff.NextDelay(), ct);
-                return;
-            }
-
             var batch = Queue.LeaseBatch();
             if (batch.Count == 0) break;
-            if (!await PushAsync(batch, ct)) return;
+            bool sent;
+            try
+            {
+                sent = await PushAsync(batch, ct);
+            }
+            catch
+            {
+                Queue.Release(batch, "push interrupted"); // don't make them wait out the 2-minute lease
+                throw;
+            }
+            if (!sent) return;
         }
 
         await PullAsync(ct);

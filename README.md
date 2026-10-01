@@ -109,6 +109,10 @@ python tests/integration/e2e_baseline.py
 # device simulator (§13.1): 1-100 phones with the real queue, login, push and pull; CSV + summary per run
 dotnet run --project tests/device-simulator -- --devices 10 --events 20
 
+# evaluation scenarios (§13): faults through Toxiproxy, event-driven vs baseline, metrics into results/summary.csv
+docker compose --profile tools up -d toxiproxy
+python tests/evaluation/run_experiment.py loss --devices 10 --events 10
+
 # per-service database roles: insert-only audit, credentials readable only by the identity service
 python tests/integration/e2e_db_roles.py
 

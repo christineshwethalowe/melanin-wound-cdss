@@ -27,7 +27,7 @@ and the pipeline recovered when Kafka came back.
 | 7 | Retry topics and dead-letter topic | §8.3, §11 | ✅ |
 | 8 | REST baseline endpoint | §13.1 | ✅ |
 | 9 | Per-service database roles (least privilege) | §9.4, §12 | ✅ |
-| 10 | Evaluation harness: device simulator, faults, metrics | §13 | 🔨 part 1 (device simulator) ✅; part 2 (faults, metrics, experiments) next |
+| 10 | Evaluation harness: device simulator, faults, metrics | §13 | 🔨 part 1 (simulator) ✅, part 2a (scenarios, metrics) ✅; 2b (scaling, ablation) next |
 | 11 | Observability: OpenTelemetry, Prometheus, Grafana | §13 | ⬜ |
 | 12 | Mobile: Drift queue + sync engine | §6 | ⬜ |
 
@@ -231,6 +231,19 @@ The first 100-device runs found three backend problems, fixed in the same step:
 - **Connection budget**: each Npgsql pool defaulted to 100, enough for one service to take all of PostgreSQL's
   connections. Pools are now bounded in docker-compose (identity 20, gateway 30, persister 10, relay 5,
   orchestrator 10).
+
+**Part 2a ✅ scenarios and metrics** (`tests/evaluation`, README there): `run_experiment.py` runs the simulator
+through Toxiproxy under a fault (`clean`, `latency`, `loss`, `flaky`, `slow-advice`, `consumer-kill`) in event-driven
+and baseline mode, samples consumer lag, and writes the §13 metrics (`metrics.py`: sync latency, duplicates and
+DEDUPLICATED rows, device resends, auditability completeness, auth health) per run plus a `summary.csv` row.
+
+- Every scenario uses the same simulator settings so they compare: a new connection per request (Toxiproxy faults
+  are per connection), a capture every 2 s, and clinicians registered directly before the run.
+- The simulator now survives network errors like a real device: login retries with backoff, a failed step backs
+  off, and rows leased by an interrupted push are released at once.
+
+**Part 2b (next):** scaling experiment (persister and orchestrator at 1, 2, 3, 6 consumers) and the duplicate
+ablation (constraint and inbox off).
 
 ## Phase 11: Observability
 

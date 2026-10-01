@@ -6,6 +6,15 @@ public enum SimMode { EventDriven, Baseline }
 public sealed record SimOptions
 {
     public string Gateway { get; init; } = "http://localhost:8080/";
+    /// <summary>Where the admin registers the clinicians: setup, not part of what is measured, so it can bypass
+    /// a faulty network (defaults to <see cref="Gateway"/>).</summary>
+    public string? SetupGateway { get; init; }
+    /// <summary>How long a device keeps a TCP connection. 0 = a new connection per request, so per-connection
+    /// network faults (Toxiproxy) reach every request.</summary>
+    public int ConnectionLifetimeSeconds { get; init; } = 120;
+    /// <summary>Pull cursor each device starts from. 0 = a brand-new device that downloads the facility's whole
+    /// history; experiments pass the current head so a run measures only its own traffic.</summary>
+    public long StartCursor { get; init; }
     public int Devices { get; init; } = 10;
     public int EventsPerDevice { get; init; } = 20;
     public SimMode Mode { get; init; } = SimMode.EventDriven;
@@ -40,6 +49,9 @@ public sealed record SimOptions
             o = args[i] switch
             {
                 "--gateway" => o with { Gateway = Value().TrimEnd('/') + "/" },
+                "--setup-gateway" => o with { SetupGateway = Value().TrimEnd('/') + "/" },
+                "--connection-lifetime-s" => o with { ConnectionLifetimeSeconds = int.Parse(Value()) },
+                "--start-cursor" => o with { StartCursor = long.Parse(Value()) },
                 "--devices" => o with { Devices = int.Parse(Value()) },
                 "--events" => o with { EventsPerDevice = int.Parse(Value()) },
                 "--mode" => o with { Mode = Value() == "baseline" ? SimMode.Baseline : SimMode.EventDriven },

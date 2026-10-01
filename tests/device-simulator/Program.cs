@@ -13,11 +13,16 @@ using DeviceSimulator;
 var options = SimOptions.Parse(args);
 var clock = TimeProvider.System;
 
-using var http = new HttpClient(new SocketsHttpHandler { MaxConnectionsPerServer = 256, PooledConnectionLifetime = TimeSpan.FromMinutes(2) })
+using var http = new HttpClient(new SocketsHttpHandler
+{
+    MaxConnectionsPerServer = 256,
+    PooledConnectionLifetime = TimeSpan.FromSeconds(options.ConnectionLifetimeSeconds),
+})
 {
     BaseAddress = new Uri(options.Gateway),
     Timeout = TimeSpan.FromSeconds(70), // above the baseline's 60 s Recommendation Service budget
 };
+using var setupHttp = new HttpClient { BaseAddress = new Uri(options.SetupGateway ?? options.Gateway) };
 
 Console.WriteLine($"Run {options.RunId}: {options.Devices} devices × {options.EventsPerDevice} events, " +
                   $"{options.Mode}, gateway {options.Gateway}");
@@ -26,7 +31,7 @@ Console.WriteLine($"Run {options.RunId}: {options.Devices} devices × {options.E
 // is where the devices register on first login.
 if (options.SharedUsername is null)
 {
-    var admin = new GatewayClient(http, $"sim-{options.RunId}-admin", options.AdminUsername, options.AdminPassword);
+    var admin = new GatewayClient(setupHttp, $"sim-{options.RunId}-admin", options.AdminUsername, options.AdminPassword);
     await admin.LoginAsync(CancellationToken.None);
     await Parallel.ForEachAsync(Enumerable.Range(1, options.Devices), new ParallelOptions { MaxDegreeOfParallelism = 8 },
         async (i, ct) => await admin.RegisterClinicianAsync(options.ClinicianUsername(i), options.ClinicianPassword, ct));
