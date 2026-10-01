@@ -98,6 +98,10 @@ python tests/integration/e2e_step2_auth_admin.py
 
 # admin dashboard sessions: no device, admins only, refused by the Sync Gateway (ADR 0005)
 python tests/integration/e2e_dashboard_client.py
+
+# whole stack against the architecture, section by section, including §11 failures.
+# Disruptive (stops Kafka, replays the topic, scales services); Docker stack only, takes a few minutes.
+python tests/integration/e2e_architecture.py
 ```
 
 Tokens are signed by the identity service with RS256; other services validate them locally against its
