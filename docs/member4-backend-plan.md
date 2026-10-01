@@ -27,7 +27,7 @@ and the pipeline recovered when Kafka came back.
 | 7 | Retry topics and dead-letter topic | §8.3, §11 | ✅ |
 | 8 | REST baseline endpoint | §13.1 | ✅ |
 | 9 | Per-service database roles (least privilege) | §9.4, §12 | ✅ |
-| 10 | Evaluation harness: device simulator, faults, metrics | §13 | 🔨 part 1 (simulator) ✅, part 2a (scenarios, metrics) ✅; 2b (scaling, ablation) next |
+| 10 | Evaluation harness: device simulator, faults, metrics | §13 | 🔨 part 1 ✅, 2a ✅, 2b scaling ✅; ablation next |
 | 11 | Observability: OpenTelemetry, Prometheus, Grafana | §13 | ⬜ |
 | 12 | Mobile: Drift queue + sync engine | §6 | ⬜ |
 
@@ -242,8 +242,27 @@ DEDUPLICATED rows, device resends, auditability completeness, auth health) per r
 - The simulator now survives network errors like a real device: login retries with backoff, a failed step backs
   off, and rows leased by an interrupted push are released at once.
 
-**Part 2b (next):** scaling experiment (persister and orchestrator at 1, 2, 3, 6 consumers) and the duplicate
-ablation (constraint and inbox off).
+First results (10 devices × 10 events, through Toxiproxy): every event finished in every scenario with audit
+completeness 1.0. The event-driven path stored **0 extra rows in every scenario** (21 resends under `loss`); the
+baseline stored 8 (`loss`) and 1 (`flaky`). With a 3 s Recommendation Service the event-driven path confirmed a save
+in 0.6 s against the baseline's 8.9 s. On a clean or merely slow network the baseline is quicker (one request,
+fewer round trips).
+
+**Part 2b ✅ scaling** (`tests/evaluation/scaling.py`, §8.1):
+
+- `slow-advice` showed the orchestrator handled one message at a time (advice p50 118 s). It now processes
+  partitions in parallel and each partition in order (`Consumers/PartitionWorkers.cs`, §4 "concurrency per
+  consumer"): offsets are committed by the consume thread only after a message's outcome is durable, a full
+  partition is paused, and a partition handed over in a rebalance finishes its message and commits first.
+  `Orchestrator__MaxConcurrency` (default 6, 1 = one at a time). Same scenario: advice p50 19 s, p95 38 s.
+- Orchestrator, 120 events, 1 s Recommendation Service, one message at a time per replica: advice p50 54.8 s (1
+  replica) → 28.9 s (2) → 20.1 s (3) → 12.8 s (6); one replica with per-partition concurrency: 12.2 s.
+- Persister, 1,000-capture burst from 50 devices: throughput 36/s (1 replica) → 53/s (2), then flat at about 50/s
+  while the backlog keeps shrinking (232 → 22): past two replicas the devices' arrival rate is the limit, not the
+  persister.
+- 0 extra rows and audit completeness 1.0 at every scale.
+
+**Next:** the duplicate ablation (constraint and inbox off).
 
 ## Phase 11: Observability
 

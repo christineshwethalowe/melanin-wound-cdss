@@ -34,6 +34,20 @@ clinicians registered directly on port 8080 before the run (setup is not measure
 facility's current cursor, like phones already in use, so a run measures its own traffic and not the download of
 the facility's history from earlier runs.
 
+## Scaling experiment (`scaling.py`, §8.1)
+
+The same load against 1, 2, 3 and 6 consumers (six partitions are the ceiling):
+
+```bash
+python tests/evaluation/scaling.py orchestrator   # Recommendation Service takes 1 s; one message at a time per replica
+python tests/evaluation/scaling.py persister      # a burst of 1,000 captures
+```
+
+For the orchestrator each replica runs with `Orchestrator__MaxConcurrency=1`, so the replica count is the only
+parallelism; a last run uses one replica with per-partition concurrency (the default, 6) for comparison. Each run
+records the group's peak lag, the time its backlog takes to drain, events per second, latency, extra rows and
+audit completeness into `results/scaling.csv`. Services are set back to one replica afterwards.
+
 ## Metrics (`metrics.py`)
 
 | Metric | Definition |

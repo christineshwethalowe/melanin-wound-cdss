@@ -9,56 +9,53 @@ namespace Orchestrator.Consumers;
 
 /// <summary>
 /// Consumes wound-events.persisted in its own group ("orchestrator"), separate from the persister, so a slow
-/// Recommendation Service call can never delay persistence (§3, §8.3). One workflow run per message; the offset
-/// is committed only after <see cref="OutcomeRouter"/> has made the outcome durable.
+/// Recommendation Service call can never delay persistence (§3, §8.3). One workflow run per message, handled by
+/// <see cref="PartitionWorkers"/>: partitions in parallel (Orchestrator:MaxConcurrency, default 6 = one per partition;
+/// 1 = strictly one message at a time), each partition in order. An offset is committed only after
+/// <see cref="OutcomeRouter"/> has made that message's outcome durable.
 /// </summary>
 public sealed class PersistedEventsConsumer(
     WorkflowRunner runner, OutcomeRouter router, IConfiguration config, ILogger<PersistedEventsConsumer> logger)
     : BackgroundService
 {
     protected override Task ExecuteAsync(CancellationToken stoppingToken) =>
-        Task.Factory.StartNew(() => RunAsync(stoppingToken), stoppingToken, TaskCreationOptions.LongRunning,
-            TaskScheduler.Default).Unwrap();
+        Task.Factory.StartNew(() => Run(stoppingToken), stoppingToken, TaskCreationOptions.LongRunning, TaskScheduler.Default);
 
-    private async Task RunAsync(CancellationToken ct)
+    private void Run(CancellationToken ct)
     {
         var bootstrap = config["Kafka:BootstrapServers"] ?? KafkaDefaults.DefaultBootstrapServers;
+        var concurrency = config.GetValue("Orchestrator:MaxConcurrency", 6);
+        var workers = new PartitionWorkers((r, token) => HandleAsync(r, token), concurrency,
+            maxQueuedPerPartition: 50, logger, ct);
+
         using var consumer = new ConsumerBuilder<string, byte[]>(
-            KafkaDefaults.Consumer(bootstrap, ConsumerGroups.Orchestrator)).Build();
+                KafkaDefaults.Consumer(bootstrap, ConsumerGroups.Orchestrator))
+            .SetPartitionsRevokedHandler((c, revoked) => workers.Stop(c, revoked.Select(p => p.TopicPartition), commit: true))
+            .SetPartitionsLostHandler((c, lost) => workers.Stop(c, lost.Select(p => p.TopicPartition), commit: false))
+            .Build();
         consumer.Subscribe(Topics.WoundEventsPersisted);
-        logger.LogInformation("Orchestrator consuming {Topic} as group {Group}", Topics.WoundEventsPersisted,
-            ConsumerGroups.Orchestrator);
+        logger.LogInformation("Orchestrator consuming {Topic} as group {Group}, up to {Concurrency} at once",
+            Topics.WoundEventsPersisted, ConsumerGroups.Orchestrator, concurrency);
 
         while (!ct.IsCancellationRequested)
         {
-            ConsumeResult<string, byte[]> result;
             try
             {
-                result = consumer.Consume(ct);
+                // Short poll so finished work is committed and drained partitions resume promptly.
+                if (consumer.Consume(TimeSpan.FromMilliseconds(200)) is { } result) workers.Dispatch(consumer, result);
+                workers.Tick(consumer);
             }
-            catch (OperationCanceledException) { break; }
             catch (ConsumeException ex)
             {
                 logger.LogWarning(ex, "Consume failed; retrying");
-                continue;
             }
-
-            try
+            catch (KafkaException ex)
             {
-                await HandleAsync(result, ct);
-                consumer.Commit(result);
-            }
-            catch (OperationCanceledException) { break; }
-            catch (Exception ex)
-            {
-                // Only reached when the outcome could not be made durable (e.g. Kafka down for the retry copy):
-                // leave the offset uncommitted and read the message again after a pause.
-                logger.LogError(ex, "Could not finish {Ref}; will redeliver", result.TopicPartitionOffset.KafkaRef());
-                consumer.Seek(result.TopicPartitionOffset);
-                await Task.Delay(TimeSpan.FromSeconds(5), ct);
+                logger.LogWarning(ex, "Commit failed; will retry on the next tick");
             }
         }
 
+        workers.Stop(consumer, workers.Partitions, commit: true);
         consumer.Close();
     }
 
