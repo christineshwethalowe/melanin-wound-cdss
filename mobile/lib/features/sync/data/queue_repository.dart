@@ -244,6 +244,12 @@ class QueueRepository {
   Future<List<QueuedEvent>> all() =>
       (_db.select(_db.woundEventQueue)..orderBy([(q) => OrderingTerm.asc(q.createdAt)])).get();
 
+  /// Newest first, for the sync screen.
+  Stream<List<QueuedEvent>> watchRecent({int limit = 50}) => (_db.select(_db.woundEventQueue)
+        ..orderBy([(q) => OrderingTerm.desc(q.createdAt), (q) => OrderingTerm.desc(q.eventId)])
+        ..limit(limit))
+      .watch();
+
   Future<RecommendationLocalData?> recommendationFor(String assessmentId, int revision) =>
       (_db.select(_db.recommendationLocal)
             ..where((r) => r.assessmentId.equals(assessmentId) & r.revision.equals(revision)))

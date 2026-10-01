@@ -55,8 +55,12 @@ enum PushFault {
 /// An in-memory gateway that behaves like the real one: deduplicates by eventId (DUPLICATE on repeats), records a
 /// PERSISTED change per stored event and, optionally, a RECOMMENDATION_READY right after, and pages pull (§7.1, §7.2).
 class FakeGateway implements SyncApi {
-  FakeGateway({this.autoRecommend = true, this.maxBatchBeforeSplit = 50, Random? random, this.faultRate = 0})
+  FakeGateway({this.autoRecommend = true, this.maxBatchBeforeSplit = 50, Random? random, this.faultRate = 0,
+      this.requireMfa = false})
       : _random = random ?? Random(1);
+
+  /// When set, login needs the code 123456 (§7.3: MFA_REQUIRED, then INVALID_TOTP for a wrong one).
+  final bool requireMfa;
 
   final bool autoRecommend;
   final int maxBatchBeforeSplit;
@@ -86,6 +90,8 @@ class FakeGateway implements SyncApi {
   Future<TokenPair> login({required String username, required String password, required String deviceId, String? totp}) async {
     if (!reachable) throw TransportException('unreachable');
     if (password != 'correct-password') throw ApiException(401, 'INVALID_CREDENTIALS');
+    if (requireMfa && (totp == null || totp.isEmpty)) throw ApiException(401, 'MFA_REQUIRED');
+    if (requireMfa && totp != '123456') throw ApiException(401, 'INVALID_TOTP');
     sessionRevoked = false;
     return _issue();
   }
@@ -98,8 +104,20 @@ class FakeGateway implements SyncApi {
     return _issue();
   }
 
+  /// JWT-shaped like the backend's (§7.3 claims); the signature is not checked on the device.
+  static String _jwt(Map<String, Object> claims) {
+    String part(Object o) => base64Url.encode(utf8.encode(jsonEncode(o))).replaceAll('=', '');
+    return '${part({'alg': 'RS256', 'typ': 'JWT'})}.${part(claims)}.${const Uuid().v4()}';
+  }
+
   TokenPair _issue() {
-    _validAccess = 'access-${const Uuid().v4()}';
+    _validAccess = _jwt({
+      'sub': 'c0ffee00-0000-4000-8000-000000000001',
+      'device_id': 'dev-test',
+      'facility_id': 'fac-001',
+      'role': 'nurse',
+      'client_id': 'mobile',
+    });
     _validRefresh = 'refresh-${const Uuid().v4()}';
     return TokenPair(_validAccess, _validRefresh, const Duration(minutes: 15));
   }
