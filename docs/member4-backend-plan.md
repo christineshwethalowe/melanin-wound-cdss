@@ -43,7 +43,7 @@ What changes in the architecture: [architecture/v2.1-changes.md](architecture/v2
 | A3 | Sync Gateway as resource server only (validates with cached JWKS) | 0003 | ✅ done with A2 (one would not run without the other) |
 | A4 | api-gateway (YARP): routing, rate limits, CORS, edge JWT check | 0004 | ✅ |
 | A5 | Web-client sessions: `clinical/0008` adds `client_id`, nullable `device_id` for the dashboard; dashboard tokens get their own audience, so the Sync Gateway refuses them | 0005 | ✅ |
-| A6 | Wiring: `auth.schema.json` (issuer, JWKS) | 0003, 0004 | ⬜ (compose and integration tests already go through the edge) |
+| A6 | Contract `auth.schema.json` 1.1: `clientId`, token claims and audiences, discovery, JWKS (compose and tests moved to the edge in A2/A4) | 0003, 0004, 0005 | ✅ |
 | A7 | `frontend/admin_dashboard` (Flutter Web) | 0005 | ⬜ |
 | A8 | CI jobs and README | — | ⬜ |
 
