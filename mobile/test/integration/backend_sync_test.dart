@@ -1,0 +1,68 @@
+@Tags(['integration'])
+library;
+
+import 'dart:io';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:melanin_wound_cdss/features/sync/api/sync_api.dart';
+import 'package:melanin_wound_cdss/features/sync/auth/auth_session.dart';
+import 'package:melanin_wound_cdss/features/sync/data/app_database.dart';
+import 'package:melanin_wound_cdss/features/sync/data/queue_repository.dart';
+import 'package:melanin_wound_cdss/features/sync/data/tables.dart';
+import 'package:melanin_wound_cdss/features/sync/engine/sync_engine.dart';
+
+import '../sync/support/fakes.dart';
+
+/// The real sync engine against the real backend (Docker stack, through the API gateway): login, push, the full
+/// server pipeline, pull, advice stored on the device. Skipped unless SYNC_BACKEND_URL is set:
+///
+///   SYNC_BACKEND_URL=http://localhost:8080 flutter test --tags integration
+void main() {
+  final url = Platform.environment['SYNC_BACKEND_URL'];
+
+  test('round trip against the real backend', () async {
+    final dir = Directory.systemTemp.createTempSync('cdss-it');
+    final secrets = MemorySecretStore();
+    final db = AppDatabase.encrypted(File('${dir.path}/it.db'), await DatabaseKeyStore.getOrCreate(secrets));
+    final queue = QueueRepository(db);
+    final api = HttpSyncApi(Uri.parse(url!));
+    final auth = AuthSession(api, secrets);
+    final engine = SyncEngine(queue: queue, api: api, auth: auth);
+
+    final deviceId = await queue.deviceId();
+    final clinician = await auth.signIn(username: 'n.silva', password: 'Demo-Pass-2026!', deviceId: deviceId);
+    expect(clinician.facilityId, 'fac-001');
+
+    // A brand-new phone: cursor 0, so the first sync pages through the facility's whole change history (hasMore)
+    // before reaching this run's changes.
+    expect(await queue.cursor(), 0);
+
+    final first = sampleEvent(deviceId: deviceId);
+    await queue.enqueue(first);
+    await queue.enqueue(sampleEvent(deviceId: deviceId));
+    await queue.enqueue(sampleEvent(
+        deviceId: deviceId, assessmentId: first['assessmentId'] as String, woundId: first['woundId'] as String, revision: 2));
+
+    final pushed = await engine.sync();
+    expect(pushed.outcome, SyncOutcome.success, reason: '$pushed');
+    expect(pushed.accepted, 3);
+    expect(pushed.changes, greaterThan(200), reason: 'paged through the history, more than one page');
+
+    // Advice arrives through the orchestrator; pull until every record is final.
+    for (var i = 0; i < 30 && (await queue.counts()).of(QueueStatus.complete) + (await queue.counts()).of(QueueStatus.superseded) < 3; i++) {
+      await Future<void>.delayed(const Duration(seconds: 2));
+      await engine.sync(force: true);
+    }
+    final rows = {for (final r in await queue.all()) '${r.assessmentId}/${r.revision}': r};
+    expect(rows['${first['assessmentId']}/1']!.status, QueueStatus.superseded, reason: 'revision 2 got the advice');
+    expect(rows['${first['assessmentId']}/2']!.status, QueueStatus.complete);
+    expect((await queue.counts()).of(QueueStatus.complete), 2);
+    expect(await queue.recommendationFor(first['assessmentId'] as String, 2), isNotNull);
+
+    await auth.signOut();
+    expect(await auth.hasSession(), isFalse);
+    await db.close();
+    dir.deleteSync(recursive: true);
+  }, skip: url == null ? 'set SYNC_BACKEND_URL (e.g. http://localhost:8080) with the Docker stack running' : false,
+     timeout: const Timeout(Duration(minutes: 3)));
+}

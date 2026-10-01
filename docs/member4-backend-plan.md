@@ -29,7 +29,7 @@ and the pipeline recovered when Kafka came back.
 | 9 | Per-service database roles (least privilege) | §9.4, §12 | ✅ |
 | 10 | Evaluation harness: device simulator, faults, metrics | §13 | ✅ |
 | 11 | Observability: OpenTelemetry, Prometheus, Grafana | §13 | ✅ |
-| 12 | Mobile: Drift queue + sync engine | §6 | ⬜ |
+| 12 | Mobile: Drift queue + sync engine | §6 | 🔨 12a (queue, encryption, auth, engine) ✅; 12b (screens, triggers) next |
 
 ### Architecture v2.1 changes (done before phase 6)
 
@@ -315,3 +315,13 @@ Prometheus http://localhost:9090.
 
 - Drift queue repository, leases, sync engine in a background isolate, login, pull, SQLCipher.
   Needs Flutter installed.
+
+**12a ✅** (`mobile/lib/features/sync`, details in `mobile/README.md`): queue repository, SQLCipher database with the
+key in the keystore, wound-event validator, auth session, API client and sync engine. 38 tests without a device,
+including §14.1 step 3 (1,000 saves survive a kill mid-sync) and step 4 (a flaky gateway never causes a lost or
+stuck row), plus an integration test against the Docker backend.
+
+**12b (next):** sign-in and sync-status screens, a debug "save sample assessment" button (capture screens belong to
+Members 1–2), and the triggers (connectivity change, app foreground, 2 s after a save, pull-to-refresh, periodic).
+Not verifiable here: running on an Android device, the §13 frame-time metric, and Android background work
+(WorkManager); the Android toolchain is not set up on this machine.

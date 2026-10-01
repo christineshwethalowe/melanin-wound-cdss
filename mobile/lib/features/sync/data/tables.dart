@@ -2,13 +2,16 @@ import 'package:drift/drift.dart';
 
 /// Record lifecycle on the device (architecture §6.1):
 /// pending → inFlight → accepted (or rejected) → adviceDeferred → complete.
-/// "accepted" means durable in Kafka; "complete" means advice has been delivered.
-enum QueueStatus { pending, inFlight, accepted, rejected, adviceDeferred, complete }
+/// "accepted" means durable in Kafka (what "synced" means); "complete" means advice has been delivered;
+/// "superseded" means a newer revision of the same assessment got the advice instead. Rejected rows stay
+/// visible and are never retried automatically.
+enum QueueStatus { pending, inFlight, accepted, rejected, adviceDeferred, complete, superseded }
 
-/// The offline queue. One row per event; each revision is a separate row.
-/// Every write commits before the UI shows "saved".
+/// The offline queue (§6). One row per event; each revision is a separate row. Written only through
+/// QueueRepository, and every write commits before the UI shows "saved".
 @DataClassName('QueuedEvent')
 @TableIndex(name: 'ix_queue_status_next', columns: {#status, #nextAttemptAt})
+@TableIndex(name: 'ix_queue_assessment', columns: {#assessmentId, #revision})
 class WoundEventQueue extends Table {
   @override
   String get tableName => 'wound_event_queue';
@@ -17,6 +20,7 @@ class WoundEventQueue extends Table {
   TextColumn get assessmentId => text()();
   IntColumn get revision => integer()();
   TextColumn get payloadJson => text()();
+  IntColumn get sizeBytes => integer()();
   TextColumn get status => textEnum<QueueStatus>()();
   IntColumn get attemptCount => integer().withDefault(const Constant(0))();
   DateTimeColumn get nextAttemptAt => dateTime().nullable()();
@@ -24,6 +28,7 @@ class WoundEventQueue extends Table {
   TextColumn get lastError => text().nullable()();
   DateTimeColumn get createdAt => dateTime()();
   DateTimeColumn get ackedAt => dateTime().nullable()();
+  DateTimeColumn get completedAt => dateTime().nullable()();
 
   @override
   Set<Column> get primaryKey => {eventId};
@@ -39,7 +44,7 @@ class AssessmentLocal extends Table {
   Set<Column> get primaryKey => {assessmentId};
 }
 
-/// Advice received from the server.
+/// Advice received from the server (§7.2 RECOMMENDATION_READY), stored as delivered.
 class RecommendationLocal extends Table {
   TextColumn get assessmentId => text()();
   IntColumn get revision => integer()();
@@ -51,19 +56,23 @@ class RecommendationLocal extends Table {
   Set<Column> get primaryKey => {assessmentId, revision};
 }
 
-/// Cache of delivered guideline figures so they survive an app restart.
+/// Cache of guideline figures (§10.4) so they survive an app restart without a re-fetch. A corpus version is a
+/// frozen snapshot, so a cached figure never goes stale.
 class FiguresLocal extends Table {
-  TextColumn get figureId => text()();
   TextColumn get corpusVersion => text()();
+  TextColumn get figureId => text()();
   BlobColumn get bytes => blob()();
+  TextColumn get contentType => text()();
   TextColumn get licence => text()();
+  TextColumn get attribution => text()();
+  TextColumn get etag => text().nullable()();
   DateTimeColumn get cachedAt => dateTime()();
 
   @override
-  Set<Column> get primaryKey => {figureId};
+  Set<Column> get primaryKey => {corpusVersion, figureId};
 }
 
-/// Small key/value table: server_cursor, last_success_at, device_id.
+/// Small key/value table: server_cursor, last_success_at, device_id, the sync lease (see SyncStateKeys).
 class SyncState extends Table {
   TextColumn get key => text()();
   TextColumn get value => text()();
@@ -72,11 +81,12 @@ class SyncState extends Table {
   Set<Column> get primaryKey => {key};
 }
 
-/// Cached clinician session state. Never the raw refresh token (that lives in the keystore).
+/// Cached clinician session state. Never the raw refresh token: that lives in the platform keystore (§6, §12).
 class AuthLocal extends Table {
   TextColumn get clinicianId => text()();
-  TextColumn get displayName => text()();
+  TextColumn get username => text()();
   TextColumn get role => text()();
+  TextColumn get facilityId => text()();
   DateTimeColumn get accessTokenExpiresAt => dateTime()();
 
   @override
