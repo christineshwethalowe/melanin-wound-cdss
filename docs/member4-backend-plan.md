@@ -27,7 +27,7 @@ and the pipeline recovered when Kafka came back.
 | 7 | Retry topics and dead-letter topic | §8.3, §11 | ✅ |
 | 8 | REST baseline endpoint | §13.1 | ✅ |
 | 9 | Per-service database roles (least privilege) | §9.4, §12 | ✅ |
-| 10 | Evaluation harness: device simulator, faults, metrics | §13 | 🔨 part 1 ✅, 2a ✅, 2b scaling ✅; ablation next |
+| 10 | Evaluation harness: device simulator, faults, metrics | §13 | ✅ |
 | 11 | Observability: OpenTelemetry, Prometheus, Grafana | §13 | ⬜ |
 | 12 | Mobile: Drift queue + sync engine | §6 | ⬜ |
 
@@ -262,7 +262,21 @@ fewer round trips).
   persister.
 - 0 extra rows and audit completeness 1.0 at every scale.
 
-**Next:** the duplicate ablation (constraint and inbox off).
+**Part 2c ✅ duplicate ablation** (§13: "an ablation run with the constraint and inbox switched off"):
+
+- Dropping the real constraints would corrupt the clinical record, so `Ablation__Enabled=true` records **shadow
+  rows** instead (`ablation` schema, no unique constraints): the gateway stops answering DUPLICATE, the persister
+  writes every message it receives to `ablation.wound_assessment`, and the orchestrator skips its inbox and writes
+  every recommendation it would store to `ablation.recommendation`. The real tables keep their protections. Each
+  service logs a warning in this mode; it is off by default and the runner switches it back off.
+- `run_experiment.py --ablation`, and a `replay` scenario (both consumer groups rewound to the run's start: every
+  message delivered twice, §11).
+- Results, 100 events: under `loss` the device's 27 resends would have been 27 duplicate assessments (shadow 127
+  rows; real store 100, 27 absorbed). Under `replay`: shadow 200 assessments and 168 recommendations (100 and 84
+  duplicates); real store 100 and 84, 0 duplicates, 100 absorbed.
+
+Phase 10 complete: simulator, scenarios, metrics, scaling and ablation. Results are written to
+`tests/evaluation/results/` (not committed).
 
 ## Phase 11: Observability
 

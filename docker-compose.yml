@@ -204,6 +204,7 @@ services:
       ConnectionStrings__Postgres: "Host=postgres;Database=${POSTGRES_DB:-cdss};Username=gateway_svc;Password=${DB_PASSWORD_GATEWAY:-gateway-local-dev};Maximum Pool Size=30"
       Jwt__MetadataAddress: "http://identity-service:8080/.well-known/openid-configuration"
       RecommendationService__BaseUrl: "http://rag-stub:8080"   # REST baseline only (§13.1)
+      Ablation__Enabled: ${ABLATION:-false}   # §13 duplicate ablation, evaluation only (tests/evaluation)
     depends_on:
       <<: *backend-deps
       identity-service:
@@ -220,6 +221,7 @@ services:
     environment:
       <<: *backend-env
       ConnectionStrings__Postgres: "Host=postgres;Database=${POSTGRES_DB:-cdss};Username=persister_svc;Password=${DB_PASSWORD_PERSISTER:-persister-local-dev};Maximum Pool Size=10"
+      Ablation__Enabled: ${ABLATION:-false}   # §13 duplicate ablation, evaluation only (tests/evaluation)
 
   outbox-relay:
     <<: *backend
@@ -246,6 +248,7 @@ services:
       ConnectionStrings__Postgres: "Host=postgres;Database=${POSTGRES_DB:-cdss};Username=orchestrator_svc;Password=${DB_PASSWORD_ORCHESTRATOR:-orchestrator-local-dev};Maximum Pool Size=10"
       RecommendationService__BaseUrl: "http://rag-stub:8080"
       # Messages handled at once, across partitions (each partition stays in order). 1 = one at a time.
+      Ablation__Enabled: ${ABLATION:-false}   # §13 duplicate ablation, evaluation only (tests/evaluation)
       Orchestrator__MaxConcurrency: ${ORCHESTRATOR_MAX_CONCURRENCY:-6}
       # Retry topic delays (§8.3). Defaults 30 s and 5 min; tests shorten them.
       Retry__FirstDelaySeconds: ${RETRY_FIRST_DELAY_SECONDS:-30}

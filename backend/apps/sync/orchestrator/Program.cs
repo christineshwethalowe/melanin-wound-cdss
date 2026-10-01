@@ -4,6 +4,7 @@ using Orchestrator.Clients;
 using Orchestrator.Consumers;
 using Orchestrator.Graph;
 using Orchestrator.Persistence;
+using Sync.Common.Evaluation;
 using Sync.Common.Kafka;
 using Sync.Common.Persistence;
 using Sync.Common.Recommendations;
@@ -19,6 +20,7 @@ var dataSource = NpgsqlDataSource.Create(
 var rag = builder.Configuration.GetSection("RecommendationService");
 
 builder.Services.AddSingleton(dataSource);
+builder.Services.AddSingleton(new AblationOptions(builder.Configuration.GetValue<bool>(AblationOptions.ConfigKey)));
 builder.Services.AddSingleton<IOrchestratorStore, PostgresOrchestratorStore>();
 builder.Services.AddSingleton(RecommendationResponseValidator.FromOutputDirectory());
 builder.Services.AddSingleton<OrchestratorGraph>();
@@ -51,6 +53,9 @@ builder.Services.AddHostedService<PersistedEventsConsumer>();
 builder.Services.AddHostedService<RetryTopicsConsumer>();
 
 var host = builder.Build();
+
+if (host.Services.GetRequiredService<AblationOptions>().Enabled)
+    host.Services.GetRequiredService<ILogger<Program>>().LogWarning(AblationOptions.Warning);
 
 if (!builder.Configuration.GetValue<bool>("SkipSchemaCheck"))
     await SchemaVersionGuard.EnsureAsync(dataSource, ExpectedSchemaVersions.All);

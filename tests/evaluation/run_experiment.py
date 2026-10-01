@@ -15,6 +15,8 @@ Scenarios
     flaky            the network drops for 8 s, back for 12 s, from 5 s in (disconnect cycles)
     slow-advice      Recommendation Service answers after 3 s
     consumer-kill    the persister and the orchestrator are killed mid-run and restarted 10 s later
+    replay           after the run, both consumer groups are rewound to its start and consume everything again:
+                     every message delivered twice (§11: relay republishes, crash before offset commit)
 
 Results: tests/evaluation/results/<timestamp>-<scenario>/ (per mode: simulator CSV, per-event metrics CSV, metrics
 JSON, consumer-lag CSV) and one row per run appended to tests/evaluation/results/summary.csv.
@@ -130,6 +132,20 @@ def kill_during(done):
     compose("start", "ingest-persister", "orchestrator")
 
 
+def replay_after(started):
+    """Rewinds the persister and orchestrator to the run's start time, so only this run's messages repeat."""
+    at = started.strftime("%Y-%m-%dT%H:%M:%S.000")
+    compose("stop", "ingest-persister", "orchestrator")
+    for group, topic in [("persister", "wound-events"), ("orchestrator", "wound-events.persisted")]:
+        subprocess.run(["docker", "exec", "kafka", "/opt/kafka/bin/kafka-consumer-groups.sh", "--bootstrap-server",
+                        "localhost:9092", "--group", group, "--topic", topic, "--reset-offsets", "--to-datetime", at,
+                        "--execute"], capture_output=True, text=True, check=True)
+    compose("start", "ingest-persister", "orchestrator")
+    time.sleep(10)
+
+
+AFTER = {"replay": replay_after}
+
 SCENARIOS = {
     "clean": (nothing, nothing, nothing),
     "latency": (latency_setup, nothing, nothing),
@@ -137,6 +153,7 @@ SCENARIOS = {
     "flaky": (nothing, flaky_during, nothing),
     "slow-advice": (slow_setup, nothing, slow_teardown),
     "consumer-kill": (nothing, kill_during, lambda: compose("start", "ingest-persister", "orchestrator")),
+    "replay": (nothing, nothing, nothing),
 }
 
 
@@ -172,6 +189,10 @@ def run_once(scenario, mode, args, out_dir):
     # Let the pipeline drain before measuring (advice can still arrive after the devices stop).
     if mode == "event-driven":
         wait(lambda: group_lag("persister") == 0 and group_lag("orchestrator") == 0, 120, 2)
+        if after := AFTER.get(scenario.removesuffix("-ablation")):
+            after(started)
+            wait(lambda: group_lag("persister") == 0 and group_lag("orchestrator") == 0, 300, 2)
+            time.sleep(5)
     sampler.stop.set()
     sampler.join()
     finished = datetime.now(timezone.utc)
@@ -212,16 +233,32 @@ def append_summary(r):
         "persisted_p50_ms": lat["enqueue_to_persisted"].get("p50"), "persisted_p95_ms": lat["enqueue_to_persisted"].get("p95"),
         "delivered_p50_ms": lat["enqueue_to_delivered"].get("p50"), "delivered_p95_ms": lat["enqueue_to_delivered"].get("p95"),
         "extra_rows": r["duplicates"]["extra_rows"], "deduplicated_absorbed": r["duplicates"]["deduplicated_absorbed"],
+        "ablation_assessment_extra_rows": r["duplicates"].get("ablation", {}).get("assessment_extra_rows", ""),
+        "ablation_recommendation_extra_rows": r["duplicates"].get("ablation", {}).get("recommendation_extra_rows", ""),
         "audit_completeness": r["auditability"].get("completeness"),
         "max_lag_persister": r["max_lag"]["persister"], "max_lag_orchestrator": r["max_lag"]["orchestrator"],
         "wall_s": r["wall_s"],
     }
-    new = not os.path.exists(path)
-    with open(path, "a", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=list(row.keys()))
-        if new:
-            w.writeheader()
-        w.writerow(row)
+    rows = []
+    if os.path.exists(path):
+        with open(path, newline="", encoding="utf-8") as f:
+            rows = list(csv.DictReader(f))
+    fields = list(row.keys()) + [k for k in (rows[0].keys() if rows else []) if k not in row]
+    # Rewritten whole, so a new column (e.g. the ablation counts) never misaligns older rows.
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=fields, restval="")
+        w.writeheader()
+        w.writerows(rows + [row])
+
+
+def set_ablation(enabled):
+    """§13 ablation: gateway DUPLICATE check and orchestrator inbox off, shadow rows recorded (see ablation/0001)."""
+    compose("up", "-d", "--no-deps", "--force-recreate", "sync-gateway", "ingest-persister", "orchestrator",
+            env={"ABLATION": "true" if enabled else "false"})
+    marker = "ABLATION MODE"
+    wait(lambda: (marker in compose("logs", "--since", "1m", "orchestrator").stdout) == enabled
+         and group_lag("orchestrator") is not None, 90, 2)
+    time.sleep(10)
 
 
 def main():
@@ -231,6 +268,8 @@ def main():
     p.add_argument("--events", type=int, default=10)
     p.add_argument("--modes", default="event-driven,baseline")
     p.add_argument("--timeout", type=int, default=600, help="simulator timeout in seconds")
+    p.add_argument("--ablation", action="store_true",
+                   help="§13 duplicate ablation: protections off, shadow tables record what they absorbed")
     p.add_argument("--capture-interval-ms", type=int, default=2000,
                    help="time between captures on a device; long enough that faults overlap the run")
     args = p.parse_args()
@@ -241,8 +280,21 @@ def main():
     subprocess.run(["dotnet", "build", "tests/device-simulator", "-v", "q", "-nologo"], cwd=REPO_ROOT,
                    capture_output=True, check=True)
 
-    out_dir = os.path.join(RESULTS, f"{datetime.now().strftime('%Y%m%d-%H%M%S')}-{args.scenario}")
+    label = args.scenario + ("-ablation" if args.ablation else "")
+    out_dir = os.path.join(RESULTS, f"{datetime.now().strftime('%Y%m%d-%H%M%S')}-{label}")
     os.makedirs(out_dir, exist_ok=True)
+    if args.ablation:
+        SCENARIOS[label] = SCENARIOS[args.scenario]
+        args.scenario = label
+        set_ablation(True)
+    try:
+        run_modes(args, out_dir)
+    finally:
+        if args.ablation:
+            set_ablation(False)
+
+
+def run_modes(args, out_dir):
     for mode in args.modes.split(","):
         print(f"\n=== {args.scenario} / {mode}: {args.devices} devices × {args.events} events")
         r = run_once(args.scenario, mode, args, out_dir)

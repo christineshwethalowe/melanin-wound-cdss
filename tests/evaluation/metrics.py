@@ -7,6 +7,8 @@ tables). Both clocks are this host's, which is why the simulator runs on the sam
     sync latency          device enqueue → PERSISTED (§13 definition); also → accepted, → advice stored, → delivered
     duplicates            rows per event_id in the store (0 by construction) and DEDUPLICATED provenance rows
                           (repeats the pipeline absorbed); baseline: extra rows per event
+    ablation              with Ablation__Enabled, the shadow tables: extra rows a store without the unique
+                          constraint, the gateway's DUPLICATE check and the inbox would hold (§13)
     auditability          events whose provenance has every expected stage / all events
     auth health           login failures and lockouts during the run window
 """
@@ -109,6 +111,21 @@ def collect(run_id, mode, sim_csv_path, started_at, finished_at):
                       "deduplicated_absorbed": sum(e["deduplicated"] for e in events)}
         audit = {"applicable": True, "complete": complete, "events": len(device),
                  "completeness": round(complete / len(device), 4) if device else None}
+        shadow = psql_csv(f"""
+            select (select count(*) from ablation.wound_assessment where device_id like '{pattern}') as assessment_rows,
+                   (select count(distinct event_id) from ablation.wound_assessment where device_id like '{pattern}')
+                       as assessment_events,
+                   (select count(*) from ablation.recommendation r where r.event_id in
+                       (select event_id from clinical.wound_assessment where device_id like '{pattern}')) as recommendation_rows,
+                   (select count(distinct r.event_id) from ablation.recommendation r where r.event_id in
+                       (select event_id from clinical.wound_assessment where device_id like '{pattern}'))
+                       as recommendation_events""")[0]
+        shadow = {k: int(v) for k, v in shadow.items()}
+        duplicates["ablation"] = {
+            "recorded": shadow["assessment_rows"] > 0,
+            "assessment_extra_rows": shadow["assessment_rows"] - shadow["assessment_events"],
+            "recommendation_extra_rows": shadow["recommendation_rows"] - shadow["recommendation_events"],
+            **shadow}
 
     auth = psql_csv(f"""
         select count(*) filter (where action = 'LOGIN' and not success) as login_failures,

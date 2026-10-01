@@ -24,6 +24,7 @@ Local Docker stack only.
 | `flaky` | network down for 8 s, up for 12 s, from 5 s in (disconnect cycles) |
 | `slow-advice` | Recommendation Service answers after 3 s |
 | `consumer-kill` | persister and orchestrator killed mid-run, restarted 10 s later |
+| `replay` | after the run both consumer groups are rewound to its start: every message delivered twice (§11) |
 
 Toxiproxy works per TCP connection, so `loss` approximates packet loss with resets and stalls. Say so in the
 method, or reproduce it with Linux `tc netem` for true packet loss.
@@ -33,6 +34,20 @@ per-connection faults reach every request), a capture every 2 s per device (so f
 clinicians registered directly on port 8080 before the run (setup is not measured). Devices start pulling at the
 facility's current cursor, like phones already in use, so a run measures its own traffic and not the download of
 the facility's history from earlier runs.
+
+## Duplicate ablation (`--ablation`, §13)
+
+```bash
+python tests/evaluation/run_experiment.py replay --modes event-driven             # protections on
+python tests/evaluation/run_experiment.py replay --modes event-driven --ablation  # protections off
+```
+
+Dropping the real unique constraints would corrupt the clinical record, so `--ablation` restarts the gateway,
+persister and orchestrator with `Ablation__Enabled=true`: the gateway stops answering DUPLICATE, the orchestrator
+skips its inbox, and both record **shadow rows** without unique constraints (`ablation.wound_assessment`,
+`ablation.recommendation`). The real tables keep their protections, so the system stays correct; the shadow tables
+show what a store without the mechanisms would hold (`ablation_*_extra_rows` in `summary.csv`). The runner switches
+the mode off again afterwards, also when a run fails.
 
 ## Scaling experiment (`scaling.py`, §8.1)
 
