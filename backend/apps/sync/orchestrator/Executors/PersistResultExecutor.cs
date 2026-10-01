@@ -1,6 +1,6 @@
 using Microsoft.Agents.AI.Workflows;
-using Npgsql;
 using Orchestrator.Graph;
+using Orchestrator.Persistence;
 
 namespace Orchestrator.Executors;
 
@@ -8,18 +8,20 @@ namespace Orchestrator.Executors;
 /// One transaction, advisory-locked on assessment_id (architecture §9.3, §10.1):
 ///   clinical.recommendation (unique on assessment_id, revision; ON CONFLICT DO NOTHING)
 ///   + sync.change_log RECOMMENDATION_READY
-///   + audit.provenance RAG_RETURNED and RECOMMENDATION_STORED (with corpus version / model audit reference)
+///   + audit.provenance RAG_RETURNED and RECOMMENDATION_STORED (with the corpus version as audit reference)
 ///   + messaging.outbox → recommendations.ready (key assessmentId)
 ///   + messaging.inbox marker for this consumer.
-/// On failure the transaction rolls back and the message is redelivered.
+/// A worker killed before the commit leaves nothing behind and the redelivered message runs again; one killed
+/// after the commit is stopped by the inbox marker. Either way there is one recommendation (§11).
 /// </summary>
-public sealed class PersistResultExecutor(NpgsqlDataSource db) : Executor<ValidatedRecommendation, OrchestrationOutcome>("PersistResult")
+[YieldsOutput(typeof(OrchestrationOutcome))]
+public sealed class PersistResultExecutor(IOrchestratorStore store) : Executor<ValidatedRecommendation>("PersistResult")
 {
-    public override ValueTask<OrchestrationOutcome> HandleAsync(ValidatedRecommendation message, IWorkflowContext context,
+    public override async ValueTask HandleAsync(ValidatedRecommendation message, IWorkflowContext context,
         CancellationToken cancellationToken = default)
     {
-        // TODO(phase 6): write the rows above, then yield new OrchestrationOutcome(message.Event, OutcomeKind.Stored).
-        _ = db;
-        throw new NotImplementedException("Plan phase 6: PersistResult");
+        var stored = await store.StoreRecommendationAsync(message.Job, message.Response!, message.RawBody, cancellationToken);
+        await context.YieldOutputAsync(new OrchestrationOutcome(message.Job.Event,
+            stored ? OutcomeKind.Stored : OutcomeKind.AlreadyProcessed), cancellationToken);
     }
 }

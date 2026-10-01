@@ -72,7 +72,8 @@ check("provenance GATEWAY_ACCEPTED,PERSISTED", stages.startswith("GATEWAY_ACCEPT
 
 print("Phase 4: outbox relay")
 check("outbox row published", wait_for(
-    f"select count(*) from messaging.outbox where payload->>'eventId' = '{eid}' and published_at is not null", "1"))
+    f"select count(*) from messaging.outbox where topic = 'wound-events.persisted' and payload->>'eventId' = '{eid}' "
+    f"and published_at is not null", "1"))
 
 print("Phase 5: pull")
 status, body = http("GET", "/v1/sync/changes?cursor=0&limit=500", token=token)

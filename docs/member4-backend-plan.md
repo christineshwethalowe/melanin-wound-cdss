@@ -23,7 +23,7 @@ and the pipeline recovered when Kafka came back.
 | 3 | Ingest persister: Kafka → PostgreSQL, idempotent | §9.3, §9.4 | ✅ |
 | 4 | Outbox relay: PostgreSQL → Kafka | §4, §9.3 | ✅ |
 | 5 | Pull endpoint: change log → device | §7.2 | ✅ |
-| 6 | Orchestrator workflow + Recommendation Service stub | §10 | 🧩 skeleton: Agent Framework graph of 6 typed executors builds at start-up; executor logic TODO |
+| 6 | Orchestrator workflow + Recommendation Service stub | §10 | ✅ (failures are routed to the retry topics; consuming them is phase 7) |
 | 7 | Retry topics and dead-letter topic | §8.3, §11 | ⬜ |
 | 8 | REST baseline endpoint | §13.1 | ⬜ |
 | 9 | Per-service database roles (least privilege) | §9.4, §12 | ⬜ |
@@ -140,7 +140,21 @@ Resolves the §9.1/§9.4 conflict: the persister upserts `patient` with `patient
 - `CallRag` → the stub (`backend/tests/rag-stub`) with a 60 s timeout, retries and a circuit breaker.
 - `PersistResult`: advisory lock, recommendation + change log (`RECOMMENDATION_READY`) + provenance + outbox + inbox marker.
 
-**Done when:** each persisted event produces exactly one recommendation, even if the worker is killed mid-run.
+**Done when:** each persisted event produces exactly one recommendation, even if the worker is killed mid-run. ✅
+
+**Verified:** `python tests/integration/e2e_orchestrator.py` (28 checks: full round trip with all provenance stages
+through DELIVERED, superseded revision, topic replay, worker killed mid-call, 503 / 422 / uncited answers) and
+`backend/tests/Orchestrator.Tests` (24 tests: every workflow path, request minimisation, request valid against
+`rag-request.schema.json`).
+
+- All SQL is in `PostgresOrchestratorStore`; the executors only decide the flow, so the workflow is tested
+  without a database.
+- Crash safety comes from Kafka and the database, not from workflow checkpoints: the offset is committed only
+  after the outcome is durable, and the inbox plus the unique (assessment_id, revision) stop a repeat (§11).
+- The device form (wound-event 1.0) does not collect `ulcerLocation`, `probeToBone`, `infectionGrade` or
+  `woundBedLabels` yet, so BuildContext sends them as `not_recorded`. Recorded fields are copied unchanged.
+  Revisit when the team settles the field list (§15).
+- Pull records the `DELIVERED` provenance stage the first time a recommendation goes out.
 
 ## Phase 7: Retries and dead-letter topic
 
