@@ -7,12 +7,33 @@ using Sync.Common.Auth;
 
 namespace IdentityService.Auth;
 
+/// <summary>
+/// Who a session is issued to (ADR 0005). Mobile sessions are bound to a registered device; admin-dashboard
+/// sessions run in a browser, have no device, and are for role admin only.
+/// </summary>
+public static class Clients
+{
+    public const string Mobile = "mobile";
+    public const string AdminDashboard = "admin-dashboard";
+
+    public static bool IsKnown(string client) => client is Mobile or AdminDashboard;
+}
+
 public sealed class JwtOptions
 {
     public string Issuer { get; set; } = "melanin-wound-cdss";
     public string Audience { get; set; } = "melanin-wound-cdss-devices";
     public int AccessTokenMinutes { get; set; } = 15;
     public int RefreshTokenDays { get; set; } = 30;
+
+    /// <summary>
+    /// Audience of admin-dashboard tokens. The Sync Gateway accepts only <see cref="Audience"/>, so a dashboard
+    /// token can never push, pull or touch patient records.
+    /// </summary>
+    public string DashboardAudience { get; set; } = "melanin-wound-cdss-admin";
+
+    /// <summary>A browser session is shorter-lived than a device's.</summary>
+    public int DashboardRefreshTokenHours { get; set; } = 12;
 
     /// <summary>
     /// RSA private key (PKCS#8 or PKCS#1 PEM) used to sign access tokens. Set Jwt__SigningKeyPem outside local dev.
@@ -66,23 +87,33 @@ public sealed class JwtTokenService(JwtOptions options, SigningKey key)
     private readonly JsonWebTokenHandler _handler = new();
 
     public int AccessTokenSeconds => options.AccessTokenMinutes * 60;
-    public TimeSpan RefreshTokenLifetime => TimeSpan.FromDays(options.RefreshTokenDays);
 
-    public string CreateAccessToken(Guid clinicianId, string deviceId, string facilityId, string role) =>
-        _handler.CreateToken(new SecurityTokenDescriptor
+    public TimeSpan RefreshTokenLifetime(string client) => client == Clients.AdminDashboard
+        ? TimeSpan.FromHours(options.DashboardRefreshTokenHours)
+        : TimeSpan.FromDays(options.RefreshTokenDays);
+
+    /// <param name="deviceId">The device for a mobile session; null for the admin dashboard.</param>
+    public string CreateAccessToken(Guid clinicianId, string? deviceId, string facilityId, string role,
+        string client = Clients.Mobile)
+    {
+        var claims = new ClaimsIdentity(
+        [
+            new Claim(ClaimNames.Subject, clinicianId.ToString()),
+            new Claim(ClaimNames.FacilityId, facilityId),
+            new Claim(ClaimNames.Role, role),
+            new Claim(ClaimNames.ClientId, client),
+        ]);
+        if (deviceId is not null) claims.AddClaim(new Claim(ClaimNames.DeviceId, deviceId));
+
+        return _handler.CreateToken(new SecurityTokenDescriptor
         {
             Issuer = options.Issuer,
-            Audience = options.Audience,
+            Audience = client == Clients.AdminDashboard ? options.DashboardAudience : options.Audience,
             Expires = DateTime.UtcNow.AddMinutes(options.AccessTokenMinutes),
             SigningCredentials = new SigningCredentials(key.PrivateKey, SecurityAlgorithms.RsaSha256),
-            Subject = new ClaimsIdentity(
-            [
-                new Claim(ClaimNames.Subject, clinicianId.ToString()),
-                new Claim(ClaimNames.DeviceId, deviceId),
-                new Claim(ClaimNames.FacilityId, facilityId),
-                new Claim(ClaimNames.Role, role),
-            ]),
+            Subject = claims,
         });
+    }
 
     /// <summary>Returns the raw token for the device and the SHA-256 hash that is the only thing stored.</summary>
     public static (string Raw, byte[] Hash) CreateRefreshToken()

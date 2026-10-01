@@ -47,6 +47,43 @@ public class JwtTokenServiceTests
     }
 
     [Fact]
+    public async Task Dashboard_token_has_its_own_audience_and_no_device()
+    {
+        var key = new SigningKey("");
+        var token = new JwtTokenService(_options, key)
+            .CreateAccessToken(Guid.NewGuid(), null, "fac-001", "admin", Clients.AdminDashboard);
+
+        var jwt = new JsonWebToken(token);
+        Assert.Equal(_options.DashboardAudience, jwt.Audiences.Single());
+        Assert.Equal(Clients.AdminDashboard, jwt.GetClaim("client_id").Value);
+        Assert.False(jwt.TryGetClaim("device_id", out _));
+
+        // The Sync Gateway validates with the device audience only.
+        var atSyncGateway = await new JsonWebTokenHandler().ValidateTokenAsync(token, ValidationWith(FromPublishedJwks(key)));
+        Assert.False(atSyncGateway.IsValid);
+    }
+
+    [Fact]
+    public void Mobile_token_keeps_the_device_claim()
+    {
+        var token = new JwtTokenService(_options, new SigningKey(""))
+            .CreateAccessToken(Guid.NewGuid(), "dev-a41c", "fac-001", "nurse");
+
+        var jwt = new JsonWebToken(token);
+        Assert.Equal(_options.Audience, jwt.Audiences.Single());
+        Assert.Equal("dev-a41c", jwt.GetClaim("device_id").Value);
+        Assert.Equal(Clients.Mobile, jwt.GetClaim("client_id").Value);
+    }
+
+    [Fact]
+    public void Dashboard_refresh_lifetime_is_shorter()
+    {
+        var tokens = new JwtTokenService(_options, new SigningKey(""));
+        Assert.Equal(TimeSpan.FromHours(12), tokens.RefreshTokenLifetime(Clients.AdminDashboard));
+        Assert.Equal(TimeSpan.FromDays(30), tokens.RefreshTokenLifetime(Clients.Mobile));
+    }
+
+    [Fact]
     public void Jwks_contains_no_private_key_material()
     {
         var jwk = FromPublishedJwks(new SigningKey(""));

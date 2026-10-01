@@ -29,7 +29,9 @@ builder.Services
         o.TokenValidationParameters = new TokenValidationParameters
         {
             ValidIssuer = jwt["Issuer"] ?? "melanin-wound-cdss",
-            ValidAudience = jwt["Audience"] ?? "melanin-wound-cdss-devices",
+            // Device and admin-dashboard tokens; the Sync Gateway itself accepts only the device audience.
+            ValidAudiences = jwt.GetSection("Audiences").Get<string[]>()
+                ?? ["melanin-wound-cdss-devices", "melanin-wound-cdss-admin"],
             ValidAlgorithms = [SecurityAlgorithms.RsaSha256],
             ClockSkew = TimeSpan.FromSeconds(30),
             NameClaimType = ClaimNames.Subject,

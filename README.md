@@ -95,6 +95,9 @@ python tests/integration/e2e_smoke.py
 
 # registration, MFA, patient alias and audit trail (build step 2)
 python tests/integration/e2e_step2_auth_admin.py
+
+# admin dashboard sessions: no device, admins only, refused by the Sync Gateway (ADR 0005)
+python tests/integration/e2e_dashboard_client.py
 ```
 
 Tokens are signed by the identity service with RS256; other services validate them locally against its
