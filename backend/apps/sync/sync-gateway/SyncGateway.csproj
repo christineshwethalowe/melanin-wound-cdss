@@ -19,6 +19,9 @@
     <!-- The one shared schema (architecture §5), copied next to the binary for validation. -->
     <None Include="..\..\..\..\contracts\wound-event.schema.json" Link="contracts\wound-event.schema.json"
           CopyToOutputDirectory="PreserveNewest" />
+    <!-- The RAG answer contract (§10.2), for the REST baseline (§13.1). -->
+    <None Include="..\..\..\..\contracts\rag-response.schema.json" Link="contracts\rag-response.schema.json"
+          CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

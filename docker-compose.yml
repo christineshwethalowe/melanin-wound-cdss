@@ -186,6 +186,7 @@ services:
     environment:
       <<: *backend-env
       Jwt__MetadataAddress: "http://identity-service:8080/.well-known/openid-configuration"
+      RecommendationService__BaseUrl: "http://rag-stub:8080"   # REST baseline only (§13.1)
     depends_on:
       <<: *backend-deps
       identity-service:

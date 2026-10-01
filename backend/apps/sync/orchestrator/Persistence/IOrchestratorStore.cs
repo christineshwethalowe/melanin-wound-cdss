@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Orchestrator.Graph;
 using Sync.Common.Contracts;
+using Sync.Common.Recommendations;
 
 namespace Orchestrator.Persistence;
 
@@ -36,16 +37,3 @@ public interface IOrchestratorStore
     /// <summary>Adds an ADVICE_DEFERRED change for the device, once per (assessment, revision).</summary>
     Task RecordDeferredAsync(PersistedEvent evt, CancellationToken ct);
 }
-
-/// <summary>The stored assessment (§9.4) and the history BuildContext turns into a request.</summary>
-public sealed record AssessmentContext(
-    Guid AssessmentId,
-    int Revision,
-    DateTimeOffset CapturedAt,
-    DateTimeOffset ReceivedAt,
-    JsonElement Analytics,
-    JsonElement ClinicalAssessment,
-    IReadOnlyList<HistoryRow> History);
-
-/// <summary>An earlier capture of the same wound (latest revision of each earlier assessment).</summary>
-public sealed record HistoryRow(DateTimeOffset CapturedAt, JsonElement Analytics);

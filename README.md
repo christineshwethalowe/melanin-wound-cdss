@@ -103,6 +103,9 @@ python tests/integration/e2e_dashboard_client.py
 # Disruptive (restarts the rag-stub and the orchestrator); Docker stack only.
 python tests/integration/e2e_orchestrator.py
 
+# REST baseline (§13.1): one synchronous request, no idempotency; compared with push on duplicates and waiting.
+python tests/integration/e2e_baseline.py
+
 # retry topics: delayed redelivery without head-of-line blocking, then the DLQ. Disruptive, about 2 minutes.
 python tests/integration/e2e_retry.py
 

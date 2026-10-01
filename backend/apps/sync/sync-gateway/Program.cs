@@ -5,6 +5,7 @@ using Npgsql;
 using Sync.Common.Auth;
 using Sync.Common.Kafka;
 using Sync.Common.Persistence;
+using Sync.Common.Recommendations;
 using SyncGateway.Endpoints;
 using SyncGateway.Push;
 using SyncGateway.Validation;
@@ -22,6 +23,14 @@ var jwt = builder.Configuration.GetSection("Jwt");
 builder.Services.AddSingleton(dataSource);
 builder.Services.AddSingleton<WoundEventValidator>();
 builder.Services.AddSingleton<PushService>();
+// REST baseline (§13.1): calls the same Recommendation Service, inside the request, with the same 60 s timeout
+// the orchestrator allows per attempt but no retries.
+builder.Services.AddSingleton(RecommendationResponseValidator.FromOutputDirectory());
+builder.Services.AddHttpClient(BaselineEndpoint.RecommendationClient, client =>
+{
+    client.BaseAddress = new Uri(builder.Configuration["RecommendationService:BaseUrl"] ?? "http://localhost:5080");
+    client.Timeout = TimeSpan.FromSeconds(60);
+});
 builder.Services.AddSingleton<IProducer<string, byte[]>>(_ => new ProducerBuilder<string, byte[]>(
     KafkaDefaults.Producer(builder.Configuration["Kafka:BootstrapServers"] ?? KafkaDefaults.DefaultBootstrapServers,
         deliveryTimeoutMs: 10_000)).Build());

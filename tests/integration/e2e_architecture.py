@@ -375,9 +375,6 @@ check("login is rate-limited per IP with 429", 429 in codes, codes[-3:])
 section("Not built yet (expected gaps)")
 if sql("select count(*) from clinical.recommendation") == "0":
     gap("§10 orchestrator: no recommendations produced", "phase 6, executors are TODO stubs")
-status, _ = http("POST", "/v1/baseline/assessments", {})
-if status in (401, 501):
-    gap("§13.1 REST baseline endpoint", f"phase 8, returns {status}")
 if sql("select has_table_privilege(current_user, 'audit.provenance', 'UPDATE')") == "t":
     gap("§9.4 / §12 per-service database roles, insert-only audit tables", "phase 9, all services log in as cdss")
 gap("§13 evaluation harness: device simulator, netem/Toxiproxy scenarios", "phase 10")

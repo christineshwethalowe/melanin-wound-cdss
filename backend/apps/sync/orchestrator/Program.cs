@@ -1,5 +1,4 @@
 using Confluent.Kafka;
-using Json.Schema;
 using Npgsql;
 using Orchestrator.Clients;
 using Orchestrator.Consumers;
@@ -7,6 +6,7 @@ using Orchestrator.Graph;
 using Orchestrator.Persistence;
 using Sync.Common.Kafka;
 using Sync.Common.Persistence;
+using Sync.Common.Recommendations;
 
 // Orchestrator (architecture §4, §10): consumes wound-events.persisted (group "orchestrator") and runs an
 // Agent Framework workflow that calls the Recommendation Service and stores the result.
@@ -20,8 +20,7 @@ var rag = builder.Configuration.GetSection("RecommendationService");
 
 builder.Services.AddSingleton(dataSource);
 builder.Services.AddSingleton<IOrchestratorStore, PostgresOrchestratorStore>();
-builder.Services.AddSingleton(_ => JsonSchema.FromText(File.ReadAllText(
-    Path.Combine(AppContext.BaseDirectory, "contracts", "rag-response.schema.json"))));
+builder.Services.AddSingleton(RecommendationResponseValidator.FromOutputDirectory());
 builder.Services.AddSingleton<OrchestratorGraph>();
 builder.Services.AddSingleton<WorkflowRunner>();
 builder.Services.AddSingleton<OutcomeRouter>();

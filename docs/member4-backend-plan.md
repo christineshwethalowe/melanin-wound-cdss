@@ -25,7 +25,7 @@ and the pipeline recovered when Kafka came back.
 | 5 | Pull endpoint: change log → device | §7.2 | ✅ |
 | 6 | Orchestrator workflow + Recommendation Service stub | §10 | ✅ |
 | 7 | Retry topics and dead-letter topic | §8.3, §11 | ✅ |
-| 8 | REST baseline endpoint | §13.1 | ⬜ |
+| 8 | REST baseline endpoint | §13.1 | ✅ |
 | 9 | Per-service database roles (least privilege) | §9.4, §12 | ⬜ |
 | 10 | Evaluation harness: device simulator, faults, metrics | §13 | ⬜ |
 | 11 | Observability: OpenTelemetry, Prometheus, Grafana | §13 | ⬜ |
@@ -176,6 +176,15 @@ in the headers) and `RetryRoutingTests`.
 
 - `POST /v1/baseline/assessments`: writes PostgreSQL and calls the same stub inside the request.
   No idempotency, so the comparison shows what duplicates look like without the mechanism.
+
+✅ **Verified:** `python tests/integration/e2e_baseline.py` (16 checks), including the two comparisons for §13:
+a retried baseline request is stored twice while the same event pushed twice is stored once; with a 3 s
+Recommendation Service the baseline makes the device wait 3 s while push answers in under a second.
+
+- Same token rules, same wound-event validation, same request builder and the same answer validation as the
+  event-driven path (`Sync.Common.Recommendations` is shared), so the architecture is the only variable.
+- Writes its own `baseline` schema (migration `baseline/0001`), never the clinical record or the audit trail.
+- A failed call returns 502 after the assessment is already written: a partial result, as a naive REST design has.
 
 ## Phase 9: Database roles
 

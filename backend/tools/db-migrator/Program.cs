@@ -7,7 +7,7 @@ using Npgsql;
 //   dotnet run --project backend/tools/db-migrator            apply pending migrations
 //   dotnet run --project backend/tools/db-migrator -- --seed  also apply db/seed (local dev only)
 
-string[] schemaOrder = ["_bootstrap", "clinical", "messaging", "audit", "sync", "rag"];
+string[] schemaOrder = ["_bootstrap", "clinical", "messaging", "audit", "sync", "rag", "baseline"];
 
 var connectionString = Environment.GetEnvironmentVariable("ConnectionStrings__Postgres")
     ?? "Host=localhost;Username=cdss;Password=cdss;Database=cdss";
