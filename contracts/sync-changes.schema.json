@@ -32,7 +32,7 @@
         "recommendation": {
           "description": "Only for RECOMMENDATION_READY: the stored Recommendation Service response (rag-response.schema.json)",
           "oneOf": [
-            { "$ref": "rag-response.schema.json" },
+            { "$ref": "https://j26-se-330/contracts/rag-response/1.0" },
             { "type": "null" }
           ]
         }
