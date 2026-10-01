@@ -207,7 +207,8 @@ services:
       <<: *backend-env
       ConnectionStrings__Postgres: "Host=postgres;Database=${POSTGRES_DB:-cdss};Username=gateway_svc;Password=${DB_PASSWORD_GATEWAY:-gateway-local-dev};Maximum Pool Size=30"
       Jwt__MetadataAddress: "http://identity-service:8080/.well-known/openid-configuration"
-      RecommendationService__BaseUrl: "http://rag-stub:8080"   # REST baseline only (§13.1)
+      # Figures proxy (§10.4) and REST baseline (§13.1). Stub by default; see the recommendation-service entry.
+      RecommendationService__BaseUrl: ${RECOMMENDATION_SERVICE_URL:-http://rag-stub:8080}
       Ablation__Enabled: ${ABLATION:-false}   # §13 duplicate ablation, evaluation only (tests/evaluation)
     depends_on:
       <<: *backend-deps
@@ -250,13 +251,36 @@ services:
     environment:
       <<: *backend-env
       ConnectionStrings__Postgres: "Host=postgres;Database=${POSTGRES_DB:-cdss};Username=orchestrator_svc;Password=${DB_PASSWORD_ORCHESTRATOR:-orchestrator-local-dev};Maximum Pool Size=10"
-      RecommendationService__BaseUrl: "http://rag-stub:8080"
+      RecommendationService__BaseUrl: ${RECOMMENDATION_SERVICE_URL:-http://rag-stub:8080}
       # Messages handled at once, across partitions (each partition stays in order). 1 = one at a time.
       Ablation__Enabled: ${ABLATION:-false}   # §13 duplicate ablation, evaluation only (tests/evaluation)
       Orchestrator__MaxConcurrency: ${ORCHESTRATOR_MAX_CONCURRENCY:-6}
       # Retry topic delays (§8.3). Defaults 30 s and 5 min; tests shorten them.
       Retry__FirstDelaySeconds: ${RETRY_FIRST_DELAY_SECONDS:-30}
       Retry__SecondDelaySeconds: ${RETRY_SECOND_DELAY_SECONDS:-300}
+
+  # Member 3's Recommendation Service (§10), built from backend/apps/recommendation-service. Profile "rag", so it
+  # only runs when asked. To use it instead of the stub (orchestrator, figures proxy and baseline all follow):
+  #   RECOMMENDATION_SERVICE_URL=http://recommendation-service:8080 docker compose --profile rag up -d --build
+  # It logs in to PostgreSQL as rag_svc, which sees the rag schema only (§10.5, plan phase 9).
+  # Guide: docs/integration/recommendation-service.md
+  recommendation-service:
+    <<: *backend
+    image: melanin-wound-cdss/recommendation-service
+    profiles: [rag]
+    build:
+      <<: *backend-build
+      args:
+        PROJECT: backend/apps/recommendation-service/RecommendationService.csproj
+        ENTRY: RecommendationService.dll
+    ports:
+      - "5081:8080"
+    environment:
+      <<: *backend-env
+      ConnectionStrings__Postgres: "Host=postgres;Database=${POSTGRES_DB:-cdss};Username=rag_svc;Password=${DB_PASSWORD_RAG:-rag-local-dev};Maximum Pool Size=20"
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
 
   # Stand-in for Member 3's Recommendation Service until the real one is ready (§13.1).
   rag-stub:

@@ -4,6 +4,8 @@
 //   STUB_DELAY_MS   extra latency per call (default 0)
 //   STUB_FAIL_MODE  none | 503 | 422 | 409 | uncited (default none)
 //                   uncited answers 200 with a section whose citation tag does not resolve (§10.1 ValidateResponse)
+// It also serves GET /v1/figures/{corpusVersion}/{figureId} (§10.4) for figures F1-F3: a 1×1 PNG with licence and
+// attribution headers and an ETag, so the gateway's figures proxy can be tested before Member 3's service exists.
 // The answer is a fixed, contract-valid shape (rag-response 1.0); its text is placeholder, not clinical advice.
 var builder = WebApplication.CreateBuilder(args);
 var app = builder.Build();
@@ -43,6 +45,24 @@ app.MapPost("/v1/recommendations", async (StubRequest request) =>
             withheld = Array.Empty<object>(),
         }),
     };
+});
+
+// A transparent 1×1 PNG: real enough for Content-Type and byte pass-through tests.
+var figurePng = Convert.FromBase64String(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=");
+
+app.MapGet("/v1/figures/{corpusVersion}/{figureId}", (string corpusVersion, string figureId, HttpContext http) =>
+{
+    if (failMode == "503") return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+    if (figureId is not ("F1" or "F2" or "F3")) return Results.NotFound();
+
+    var etag = $"\"{corpusVersion}-{figureId}\"";
+    http.Response.Headers.ETag = etag;
+    http.Response.Headers["X-Figure-Licence"] = "CC BY-NC 4.0 (stub)";
+    http.Response.Headers["X-Figure-Attribution"] = "Stub corpus, not a real guideline figure";
+    http.Response.Headers["X-Figure-Tier"] = figureId == "F1" ? "A" : "B";
+    if (http.Request.Headers.IfNoneMatch == etag) return Results.StatusCode(StatusCodes.Status304NotModified);
+    return Results.Bytes(figurePng, "image/png");
 });
 
 app.Run();

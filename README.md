@@ -122,6 +122,9 @@ python tests/integration/e2e_dashboard_client.py
 # Disruptive (restarts the rag-stub and the orchestrator); Docker stack only.
 python tests/integration/e2e_orchestrator.py
 
+# figures proxy (§10.4): guideline figures through the gateway, licence headers, ETag/304, unsafe ids refused
+python tests/integration/e2e_figures.py
+
 # REST baseline (§13.1): one synchronous request, no idempotency; compared with push on duplicates and waiting.
 python tests/integration/e2e_baseline.py
 
@@ -159,6 +162,9 @@ passwords; outside a laptop demo set `DB_PASSWORD_IDENTITY`, `DB_PASSWORD_GATEWA
 `DB_PASSWORD_RELAY`, `DB_PASSWORD_ORCHESTRATOR` and `DB_PASSWORD_RAG` in `.env`; db-migrate applies them.
 
 Progress and next steps for the backend: [docs/member4-backend-plan.md](docs/member4-backend-plan.md)
+
+Plugging in Member 3's Recommendation Service (contract, error handling, figures, database role, how to switch from
+the stub): [docs/integration/recommendation-service.md](docs/integration/recommendation-service.md)
 
 ## Working together
 

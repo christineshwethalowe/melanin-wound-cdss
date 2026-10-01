@@ -156,6 +156,18 @@ through DELIVERED, superseded revision, topic replay, worker killed mid-call, 50
   Revisit when the team settles the field list (§15).
 - Pull records the `DELIVERED` provenance stage the first time a recommendation goes out.
 
+**Member 3 handover ✅** (`docs/integration/recommendation-service.md`):
+
+- Figures proxy `GET /v1/figures/{corpusVersion}/{figureId}` (§10.4), was 501: forwards to the Recommendation
+  Service for device tokens only, refuses unsafe ids before forwarding, passes through the image, Content-Type, ETag
+  / 304 and licence / attribution headers, marks figures immutable (frozen corpus), 502 FIGURE_UNAVAILABLE with
+  Retry-After when the service is down. The stub serves sample figures F1-F3. `tests/integration/e2e_figures.py`
+  (16 checks).
+- docker-compose entry `recommendation-service` (profile `rag`, port 5081, logs in as `rag_svc`), and one variable,
+  `RECOMMENDATION_SERVICE_URL`, that switches the orchestrator, figures proxy and baseline from the stub to it.
+- Integration guide: what the service receives, how each answer is handled, limits (60 s, retries, idempotency,
+  concurrency), figures, the rag schema and role, how to switch and check.
+
 ## Phase 7: Retries and dead-letter topic
 
 - On a transient failure: copy to `retry.30s`, then `retry.5m`, then `dlq`; commit the original offset.
