@@ -5,6 +5,8 @@ using IngestPersister.Persistence;
 using Npgsql;
 using Sync.Common.Contracts;
 using Sync.Common.Kafka;
+using Sync.Common.Telemetry;
+using System.Diagnostics;
 
 namespace IngestPersister.Consumers;
 
@@ -65,6 +67,8 @@ public sealed class WoundEventsConsumer(
 
     private async Task HandleAsync(ConsumeResult<string, byte[]> result, CancellationToken ct)
     {
+        // Continues the trace the gateway started (traceparent in the Kafka headers, §13).
+        using var activity = SyncTelemetry.StartConsume(SyncTelemetry.Persister, "persist", result.Message.Headers);
         var traceId = result.Message.Headers.GetHeader(HeaderNames.TraceParent);
 
         WoundEvent evt;
@@ -79,10 +83,19 @@ public sealed class WoundEventsConsumer(
         catch (JsonException ex)
         {
             await DeadLetterAsync(result, "UNPARSEABLE", ex.Message, ct);
+            SyncMetrics.EventsPersisted.Add(1, new KeyValuePair<string, object?>("outcome", "dead_letter"));
             return;
         }
 
+        var started = Stopwatch.GetTimestamp();
         var outcome = await persister.ExecuteAsync(evt, raw, result.TopicPartitionOffset, traceId, ct);
+        SyncMetrics.PersistDuration.Record(Stopwatch.GetElapsedTime(started).TotalSeconds);
+        SyncMetrics.EventsPersisted.Add(1, new KeyValuePair<string, object?>("outcome", outcome switch
+        {
+            PersistOutcome.Persisted => "persisted",
+            PersistOutcome.Deduplicated => "deduplicated",
+            _ => "revision_conflict",
+        }));
         switch (outcome)
         {
             case PersistOutcome.Persisted:

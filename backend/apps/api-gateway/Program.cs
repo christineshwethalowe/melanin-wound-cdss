@@ -4,12 +4,18 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
 using Sync.Common.Auth;
+using Sync.Common.Telemetry;
+using OpenTelemetry.Trace;
+using OpenTelemetry.Metrics;
 
 // API gateway (ADR 0004): the single public entry point for the app, the admin dashboard and the harness.
 // Routes to the identity service and the Sync Gateway (routes in appsettings.json, ReverseProxy section),
 // and handles the edge concerns once: JWT check, rate limits, CORS, body size. No business logic.
 // YARP forwards traceparent and adds X-Forwarded-For/Proto/Host. Stateless; scale by replicas.
 var builder = WebApplication.CreateBuilder(args);
+builder.AddSyncTelemetry("api-gateway")
+    .WithTracing(t => t.AddAspNetCoreInstrumentation())
+    .WithMetrics(m => m.AddAspNetCoreInstrumentation());
 
 var jwt = builder.Configuration.GetSection("Jwt");
 var limits = builder.Configuration.GetSection("RateLimits");

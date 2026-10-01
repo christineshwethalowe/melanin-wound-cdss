@@ -5,10 +5,12 @@ using Npgsql;
 using Sync.Common.Evaluation;
 using Sync.Common.Kafka;
 using Sync.Common.Persistence;
+using Sync.Common.Telemetry;
 
 // Ingest persister (architecture §4): consumes wound-events in its own group and writes PostgreSQL.
 // Scale by running more instances, up to the partition count of wound-events.
 var builder = Host.CreateApplicationBuilder(args);
+builder.AddSyncTelemetry("ingest-persister");
 
 var dataSource = NpgsqlDataSource.Create(
     builder.Configuration.GetConnectionString("Postgres")

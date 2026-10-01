@@ -10,10 +10,16 @@ using Sync.Common.Recommendations;
 using SyncGateway.Endpoints;
 using SyncGateway.Push;
 using SyncGateway.Validation;
+using Sync.Common.Telemetry;
+using OpenTelemetry.Trace;
+using OpenTelemetry.Metrics;
 
 // Sync Gateway (architecture §4): push/pull, patient alias, figure proxy. Stateless; scale by replicas.
 // Tokens come from the identity service (ADR 0003); this service only validates them.
 var builder = WebApplication.CreateBuilder(args);
+builder.AddSyncTelemetry("sync-gateway")
+    .WithTracing(t => t.AddAspNetCoreInstrumentation())
+    .WithMetrics(m => m.AddAspNetCoreInstrumentation());
 
 var dataSource = NpgsqlDataSource.Create(
     builder.Configuration.GetConnectionString("Postgres")

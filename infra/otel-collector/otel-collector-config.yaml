@@ -1,3 +1,6 @@
+# OpenTelemetry collector (architecture §13, plan phase 11). Every service sends OTLP here:
+#   traces  → Jaeger (http://localhost:16686)
+#   metrics → Prometheus scrapes :8889 → Grafana (http://localhost:3000)
 receivers:
   otlp:
     protocols:
@@ -12,15 +15,20 @@ processors:
 exporters:
   prometheus:
     endpoint: 0.0.0.0:8889
-  debug:
-    verbosity: basic
+    # service_name etc. become labels, so dashboards can split by service.
+    resource_to_telemetry_conversion:
+      enabled: true
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
 
 service:
   pipelines:
     traces:
       receivers: [otlp]
       processors: [batch]
-      exporters: [debug]
+      exporters: [otlp/jaeger]
     metrics:
       receivers: [otlp]
       processors: [batch]

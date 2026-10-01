@@ -19,6 +19,9 @@ x-backend: &backend
   environment: &backend-env
     ConnectionStrings__Postgres: "Host=postgres;Username=${POSTGRES_USER:-cdss};Password=${POSTGRES_PASSWORD:-cdss};Database=${POSTGRES_DB:-cdss}"
     Kafka__BootstrapServers: "kafka:9092"
+    # Traces and metrics to the collector (plan phase 11). Only used when the tools profile is up; otherwise the
+    # exporter just drops what it cannot send.
+    OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4317}
   depends_on: &backend-deps
     db-migrate:
       condition: service_completed_successfully
@@ -164,6 +167,7 @@ services:
     ports:
       - "8080:8080"
     environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4317}
       Jwt__MetadataAddress: "http://identity-service:8080/.well-known/openid-configuration"
       ReverseProxy__Clusters__identity__Destinations__d1__Address: "http://identity-service:8080/"
       ReverseProxy__Clusters__sync__Destinations__d1__Address: "http://sync-gateway:8080/"
@@ -282,6 +286,8 @@ services:
     volumes:
       - ./infra/toxiproxy:/config:ro
 
+  # Observability (plan phase 11): services → otel-collector → Jaeger (traces) and Prometheus → Grafana (metrics).
+  #   Grafana http://localhost:3000 · Jaeger http://localhost:16686 · Prometheus http://localhost:9090
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.111.0
     profiles: [tools]
@@ -291,6 +297,25 @@ services:
       - "4318:4318"            # OTLP HTTP
     volumes:
       - ./infra/otel-collector:/etc/otel:ro
+    depends_on: [jaeger]
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.76.0
+    profiles: [tools]
+    ports:
+      - "16686:16686"          # UI
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+
+  # Consumer-group lag per partition for Prometheus (§13).
+  kafka-exporter:
+    image: danielqsj/kafka-exporter:v1.9.0
+    profiles: [tools]
+    command: ["--kafka.server=kafka:9092"]
+    restart: unless-stopped
+    depends_on:
+      kafka:
+        condition: service_healthy
 
   prometheus:
     image: prom/prometheus:v2.55.0
@@ -310,6 +335,7 @@ services:
       GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
     volumes:
       - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
     depends_on: [prometheus]
 
 volumes:

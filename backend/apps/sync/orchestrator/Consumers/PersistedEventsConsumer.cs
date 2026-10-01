@@ -4,6 +4,7 @@ using Orchestrator.Graph;
 using Sync.Common.Contracts;
 using Sync.Common.Kafka;
 using Sync.Common.Telemetry;
+using System.Diagnostics;
 
 namespace Orchestrator.Consumers;
 
@@ -81,8 +82,11 @@ public sealed class PersistedEventsConsumer(
         }
 
         var job = new OrchestrationJob(evt, result.Message.Headers.GetHeader(HeaderNames.TraceParent));
+        var started = Stopwatch.GetTimestamp();
         var outcome = await runner.RunAsync(job, ct);
         await router.RouteAsync(result, outcome, ct);
+        SyncMetrics.OrchestrationDuration.Record(Stopwatch.GetElapsedTime(started).TotalSeconds);
+        SyncMetrics.OrchestrationOutcomes.Add(1, new KeyValuePair<string, object?>("kind", outcome.Kind.ToString()));
 
         logger.Log(outcome.Retry || outcome.Kind == OutcomeKind.DeadLetter ? LogLevel.Warning : LogLevel.Information,
             "{EventId} (assessment {AssessmentId} rev {Revision}) from {Ref}: {Kind} {Detail}", evt.EventId,

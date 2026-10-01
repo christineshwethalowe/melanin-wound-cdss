@@ -7,11 +7,17 @@ using Microsoft.IdentityModel.Tokens;
 using Npgsql;
 using Sync.Common.Auth;
 using Sync.Common.Persistence;
+using Sync.Common.Telemetry;
+using OpenTelemetry.Trace;
+using OpenTelemetry.Metrics;
 
 // Identity service (ADR 0003): clinician login/refresh/logout, MFA and facility admin. The only service that
 // signs tokens; everything else validates them against /.well-known/jwks.json. Stateless; scale by replicas
 // once Jwt__SigningKeyPem is set (all replicas must share the key).
 var builder = WebApplication.CreateBuilder(args);
+builder.AddSyncTelemetry("identity-service")
+    .WithTracing(t => t.AddAspNetCoreInstrumentation())
+    .WithMetrics(m => m.AddAspNetCoreInstrumentation());
 
 var dataSource = NpgsqlDataSource.Create(
     builder.Configuration.GetConnectionString("Postgres")

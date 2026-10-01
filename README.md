@@ -56,6 +56,9 @@ then starts the API gateway, identity service, Sync Gateway, ingest persister, o
 | API gateway (the only backend URL) | http://localhost:8080: `/v1/auth/*`, `/v1/admin/*`, `/.well-known/*` → identity service; `/health`, `/v1/sync/*`, `/v1/patients/*`, `/v1/figures/*` → Sync Gateway |
 | Recommendation Service stub | http://localhost:5080 |
 | Kafka UI | http://localhost:8081 |
+| Grafana: dashboard "Sync pipeline (§13)" (`--profile tools`) | http://localhost:3000 |
+| Jaeger: traces across services (`--profile tools`) | http://localhost:16686 |
+| Prometheus (`--profile tools`) | http://localhost:9090 |
 | PostgreSQL | `localhost:5432` (cdss / cdss) |
 | Demo users (local only) | `admin.demo` / `Demo-Admin-2026!` (admin), `n.silva` / `Demo-Pass-2026!` (nurse), facility `fac-001` |
 
@@ -74,7 +77,7 @@ Requirements: Docker, .NET 10 SDK, Flutter 3.x (for the mobile app).
 ```bash
 cp .env.example .env
 docker compose up -d kafka postgres kafka-ui   # infrastructure only
-docker compose --profile tools up -d           # optional: Toxiproxy, OTel, Prometheus, Grafana
+docker compose --profile tools up -d           # optional: Toxiproxy, OTel collector, Jaeger, Prometheus, Grafana
 bash infra/kafka/create-topics.sh              # create the topics
 dotnet run --project backend/tools/db-migrator # apply db/migrations
 dotnet build MelaninWoundCdss.slnx

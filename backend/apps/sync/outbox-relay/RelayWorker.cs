@@ -3,6 +3,7 @@ using System.Text.Json;
 using Confluent.Kafka;
 using Npgsql;
 using Sync.Common.Kafka;
+using Sync.Common.Telemetry;
 
 namespace OutboxRelay;
 
@@ -82,6 +83,8 @@ public sealed class RelayWorker(
         }
         await tx.CommitAsync(ct);
 
+        foreach (var row in rows)
+            SyncMetrics.OutboxPublished.Add(1, new KeyValuePair<string, object?>("topic", row.Topic));
         logger.LogInformation("Published {Count} outbox row(s)", rows.Count);
         return rows.Count;
     }
