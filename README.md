@@ -115,6 +115,9 @@ python tests/integration/e2e_smoke.py
 # registration, MFA, patient alias and audit trail (build step 2)
 python tests/integration/e2e_step2_auth_admin.py
 
+# device revocation (§12): a revoked phone cannot log in or refresh, and its access token is refused within 30 s
+python tests/integration/e2e_device_revocation.py
+
 # admin dashboard sessions: no device, admins only, refused by the Sync Gateway (ADR 0005)
 python tests/integration/e2e_dashboard_client.py
 

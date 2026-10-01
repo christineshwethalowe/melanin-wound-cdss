@@ -87,6 +87,11 @@ cases = [
     ("gateway_svc", "update clinical.patient set facility_id = facility_id where false", False),
     ("persister_svc", "update clinical.wound_assessment set status = status where false", False),
     ("persister_svc", "delete from clinical.wound_assessment where false", False),
+    ("identity_svc", "update clinical.device set revoked_at = revoked_at where false", True),
+    ("identity_svc", "update clinical.device set facility_id = facility_id where false", False),
+    ("identity_svc", "delete from clinical.device where false", False),
+    ("gateway_svc", "select revoked_at from clinical.device where false", True),
+    ("gateway_svc", "update clinical.device set revoked_at = revoked_at where false", False),
 ]
 for role, statement, expected in cases:
     if expected:

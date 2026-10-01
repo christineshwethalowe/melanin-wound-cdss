@@ -7,7 +7,7 @@ namespace IdentityService.Endpoints;
 
 /// <summary>
 /// Facility admin endpoints (role "admin"). Everything is scoped to the admin's own facility, taken from the
-/// token — an admin can never see or change clinicians of another facility.
+/// token — an admin can never see or change clinicians or devices of another facility.
 /// </summary>
 public static class AdminEndpoints
 {
@@ -43,6 +43,13 @@ public static class AdminEndpoints
         admin.MapPost("/clinicians/{username}/reset-mfa", async (string username, ClaimsPrincipal user,
             ClinicianAdminService service, CancellationToken ct) =>
             ToHttp(await service.ResetMfaAsync(AuthEndpoints.ClinicianId(user), Facility(user), username, ct)));
+
+        admin.MapGet("/devices", async (ClaimsPrincipal user, DeviceAdminService service, CancellationToken ct) =>
+            Results.Ok(await service.ListAsync(Facility(user), ct)));
+
+        admin.MapPost("/devices/{deviceId}/revoke", async (string deviceId, ClaimsPrincipal user,
+            DeviceAdminService service, CancellationToken ct) =>
+            ToHttp(await service.RevokeAsync(AuthEndpoints.ClinicianId(user), Facility(user), deviceId, ct)));
 
         admin.MapGet("/auth-audit", async (int? limit, ClaimsPrincipal user, ClinicianAdminService service, CancellationToken ct) =>
             Results.Ok(await service.AuditLogAsync(Facility(user), limit ?? 100, ct)));

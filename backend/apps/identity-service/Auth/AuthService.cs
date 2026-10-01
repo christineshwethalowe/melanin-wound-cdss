@@ -248,7 +248,9 @@ public sealed class AuthService(NpgsqlDataSource db, PasswordHasher hasher, JwtT
             SELECT s.session_id, c.clinician_id, s.device_id, c.facility_id, c.role, c.username, s.client_id
             FROM clinical.clinician_session s
             JOIN clinical.clinician c USING (clinician_id)
+            LEFT JOIN clinical.device d ON d.device_id = s.device_id
             WHERE s.refresh_token_hash = @h AND s.revoked_at IS NULL AND s.expires_at > now() AND c.active
+              AND (s.device_id IS NULL OR d.revoked_at IS NULL)
             FOR UPDATE OF s
             """, conn, tx);
         cmd.Parameters.AddWithValue("h", JwtTokenService.HashRefreshToken(refreshToken));

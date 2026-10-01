@@ -92,6 +92,26 @@ phase 12 points the app at the single edge URL.
 (RFC 6238 test vectors, encryption binding). Known limit: a deactivated clinician's access token stays valid
 until it expires (at most 15 minutes); refresh is refused immediately.
 
+### Phase 1c: device revocation (§12: "devices are registered and can be revoked") ✅
+
+- `GET /v1/admin/devices`: the facility's devices with registration time, revocation time, active sessions and
+  the last clinician who used each one.
+- `POST /v1/admin/devices/{deviceId}/revoke`: for a lost or stolen phone. In one transaction it sets
+  `clinical.device.revoked_at`, ends every session on the device and writes `DEVICE_REVOKE` to `audit.auth_audit`
+  with the admin as actor. Devices of another facility are 404; revoking twice is 409 `DEVICE_ALREADY_REVOKED`.
+  Revocation is permanent: a recovered phone is re-enrolled under a new device id.
+- Effect: login on the device is refused (`DEVICE_NOT_ALLOWED`, which the app already explains). Refresh is
+  refused immediately: it checks the device as well as the session. The Sync Gateway also refuses the device's
+  unexpired access tokens, because `DeviceRevocationCheck` looks up `revoked_at` after the signature is validated.
+  The answer per device is cached for 30 s, so revocation takes effect within 30 s instead of the token's
+  15 minutes, at the cost of at most one lookup per device every 30 s. Admin-dashboard tokens have no device
+  and skip the check.
+- Migrations: `audit/0004_auth_audit_device_revoke.sql`, `grants/0004_device_revocation.sql` (identity may set
+  `revoked_at` and nothing else on `clinical.device`; the gateway may read `device_id, revoked_at` only).
+
+**Verified:** `python tests/integration/e2e_device_revocation.py` (21 checks), plus 5 new checks in
+`e2e_db_roles.py` for the column grants.
+
 ## Phase 2: Push
 
 - `POST /v1/sync/push` needs a JWT. Body: `{ deviceId, batchId, events[] }`.
@@ -203,7 +223,7 @@ Recommendation Service the baseline makes the device wait 3 s while push answers
 - One login role per service. `audit.provenance` and `audit.auth_audit` are insert-only.
   Only the identity service can read `clinical.clinician_credential` (v2.1: was the gateway). The `rag` role sees only `rag`.
 
-✅ **Verified:** `python tests/integration/e2e_db_roles.py` (63 checks: each service is connected under its own role;
+✅ **Verified:** `python tests/integration/e2e_db_roles.py` (68 checks: each service is connected under its own role;
 only `identity_svc` reads credentials; nobody can UPDATE, DELETE or TRUNCATE the audit tables; `rag_svc` sees only
 `rag`; column-level writes such as the orchestrator changing only `wound_assessment.status`). Every other suite
 passes with the services running under these roles, which shows the grants are sufficient.

@@ -7,6 +7,7 @@ using Sync.Common.Evaluation;
 using Sync.Common.Kafka;
 using Sync.Common.Persistence;
 using Sync.Common.Recommendations;
+using SyncGateway.Auth;
 using SyncGateway.Endpoints;
 using SyncGateway.Push;
 using SyncGateway.Validation;
@@ -31,6 +32,8 @@ builder.Services.AddSingleton(dataSource);
 builder.Services.AddSingleton<WoundEventValidator>();
 builder.Services.AddSingleton(new AblationOptions(builder.Configuration.GetValue<bool>(AblationOptions.ConfigKey)));
 builder.Services.AddSingleton<PushService>();
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<DeviceRevocationCheck>();
 // The Recommendation Service, for the figures proxy (§10.4) and the REST baseline (§13.1, which calls it inside the
 // request with the same 60 s the orchestrator allows per attempt, but no retries).
 builder.Services.AddSingleton(RecommendationResponseValidator.FromOutputDirectory());
@@ -62,6 +65,19 @@ builder.Services
             ClockSkew = TimeSpan.FromSeconds(30),
             NameClaimType = ClaimNames.Subject,
             RoleClaimType = ClaimNames.Role,
+        };
+        // A valid signature is not enough for a mobile token: its device must not have been revoked (§12).
+        // Admin-dashboard tokens carry no device and skip the check.
+        o.Events = new JwtBearerEvents
+        {
+            OnTokenValidated = async context =>
+            {
+                var device = context.Principal?.FindFirst(ClaimNames.DeviceId)?.Value;
+                if (device is null) return;
+                var check = context.HttpContext.RequestServices.GetRequiredService<DeviceRevocationCheck>();
+                if (!await check.IsAllowedAsync(device, context.HttpContext.RequestAborted))
+                    context.Fail("DEVICE_REVOKED");
+            },
         };
     });
 builder.Services.AddAuthorization();
