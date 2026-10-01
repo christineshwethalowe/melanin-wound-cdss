@@ -6,8 +6,11 @@ using Npgsql;
 // Applies db/migrations in order and records each file in sync.schema_migrations (architecture §9.2).
 //   dotnet run --project backend/tools/db-migrator            apply pending migrations
 //   dotnet run --project backend/tools/db-migrator -- --seed  also apply db/seed (local dev only)
+// Service role passwords (plan phase 9) come from the environment, never from a migration file:
+//   ServiceRoles__identity_svc=...  ServiceRoles__gateway_svc=...  (one per role in db/migrations/_roles)
 
-string[] schemaOrder = ["_bootstrap", "clinical", "messaging", "audit", "sync", "rag", "baseline"];
+// _roles runs first so later migrations can grant to the service roles; grants runs last, when every table exists.
+string[] schemaOrder = ["_bootstrap", "_roles", "clinical", "messaging", "audit", "sync", "rag", "baseline", "grants"];
 
 var connectionString = Environment.GetEnvironmentVariable("ConnectionStrings__Postgres")
     ?? "Host=localhost;Username=cdss;Password=cdss;Database=cdss";
@@ -67,6 +70,24 @@ foreach (var schema in schemaOrder)
 }
 
 Console.WriteLine(count == 0 ? "Database is up to date." : $"Applied {count} migration(s).");
+
+// Set each service role's password from ServiceRoles__<role>. A role without one cannot log in.
+foreach (var (key, password) in Environment.GetEnvironmentVariables().Cast<System.Collections.DictionaryEntry>()
+             .Select(e => ((string)e.Key, (string?)e.Value))
+             .Where(e => e.Item1.StartsWith("ServiceRoles__", StringComparison.Ordinal) && !string.IsNullOrEmpty(e.Item2))
+             .OrderBy(e => e.Item1, StringComparer.Ordinal))
+{
+    var role = key["ServiceRoles__".Length..];
+    // format() quotes the role name and the password, so neither can break out of the statement.
+    await using var build = new NpgsqlCommand(
+        "SELECT format('ALTER ROLE %I WITH LOGIN PASSWORD %L', @r, @p) FROM pg_roles WHERE rolname = @r", conn);
+    build.Parameters.AddWithValue("r", role);
+    build.Parameters.AddWithValue("p", password!);
+    if (await build.ExecuteScalarAsync() is not string alter)
+        throw new InvalidOperationException($"ServiceRoles__{role} is set, but no role {role} exists (see db/migrations/_roles).");
+    await Exec(conn, null, alter);
+    Console.WriteLine($"password set for {role}");
+}
 
 if (args.Contains("--seed"))
 {

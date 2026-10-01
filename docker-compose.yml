@@ -12,6 +12,8 @@ x-backend: &backend
     context: .
     dockerfile: backend/Dockerfile
   restart: unless-stopped
+  # The owner login below is used only by db-migrate. Every service overrides it with its own role (plan phase 9,
+  # db/migrations/_roles and grants); passwords are local-dev defaults, set real ones in .env.
   environment: &backend-env
     ConnectionStrings__Postgres: "Host=postgres;Username=${POSTGRES_USER:-cdss};Password=${POSTGRES_PASSWORD:-cdss};Database=${POSTGRES_DB:-cdss}"
     Kafka__BootstrapServers: "kafka:9092"
@@ -111,6 +113,14 @@ services:
         ENTRY: DbMigrator.dll
     image: melanin-wound-cdss/db-migrator
     restart: "no"
+    environment:
+      <<: *backend-env
+      ServiceRoles__identity_svc: ${DB_PASSWORD_IDENTITY:-identity-local-dev}
+      ServiceRoles__gateway_svc: ${DB_PASSWORD_GATEWAY:-gateway-local-dev}
+      ServiceRoles__persister_svc: ${DB_PASSWORD_PERSISTER:-persister-local-dev}
+      ServiceRoles__relay_svc: ${DB_PASSWORD_RELAY:-relay-local-dev}
+      ServiceRoles__orchestrator_svc: ${DB_PASSWORD_ORCHESTRATOR:-orchestrator-local-dev}
+      ServiceRoles__rag_svc: ${DB_PASSWORD_RAG:-rag-local-dev}
     depends_on:
       postgres:
         condition: service_healthy
@@ -125,6 +135,9 @@ services:
         PROJECT: backend/apps/identity-service/IdentityService.csproj
         ENTRY: IdentityService.dll
     restart: "no"
+    environment:
+      <<: *backend-env
+      ConnectionStrings__Postgres: "Host=postgres;Database=${POSTGRES_DB:-cdss};Username=identity_svc;Password=${DB_PASSWORD_IDENTITY:-identity-local-dev}"
     depends_on:
       db-migrate:
         condition: service_completed_successfully
@@ -168,6 +181,7 @@ services:
         ENTRY: IdentityService.dll
     environment:
       <<: *backend-env
+      ConnectionStrings__Postgres: "Host=postgres;Database=${POSTGRES_DB:-cdss};Username=identity_svc;Password=${DB_PASSWORD_IDENTITY:-identity-local-dev}"
       # Local development values. Without Jwt__SigningKeyPem a key is generated at start-up (restart = devices refresh).
       Jwt__SigningKeyPem: ${Jwt__SigningKeyPem:-}
       Secrets__EncryptionKey: ${Secrets__EncryptionKey:-local-dev-only-encryption-key-change-me-0123456}
@@ -185,6 +199,7 @@ services:
         ENTRY: SyncGateway.dll
     environment:
       <<: *backend-env
+      ConnectionStrings__Postgres: "Host=postgres;Database=${POSTGRES_DB:-cdss};Username=gateway_svc;Password=${DB_PASSWORD_GATEWAY:-gateway-local-dev}"
       Jwt__MetadataAddress: "http://identity-service:8080/.well-known/openid-configuration"
       RecommendationService__BaseUrl: "http://rag-stub:8080"   # REST baseline only (§13.1)
     depends_on:
@@ -200,6 +215,9 @@ services:
       args:
         PROJECT: backend/apps/sync/ingest-persister/IngestPersister.csproj
         ENTRY: IngestPersister.dll
+    environment:
+      <<: *backend-env
+      ConnectionStrings__Postgres: "Host=postgres;Database=${POSTGRES_DB:-cdss};Username=persister_svc;Password=${DB_PASSWORD_PERSISTER:-persister-local-dev}"
 
   outbox-relay:
     <<: *backend
@@ -209,6 +227,9 @@ services:
       args:
         PROJECT: backend/apps/sync/outbox-relay/OutboxRelay.csproj
         ENTRY: OutboxRelay.dll
+    environment:
+      <<: *backend-env
+      ConnectionStrings__Postgres: "Host=postgres;Database=${POSTGRES_DB:-cdss};Username=relay_svc;Password=${DB_PASSWORD_RELAY:-relay-local-dev}"
 
   orchestrator:
     <<: *backend
@@ -220,6 +241,7 @@ services:
         ENTRY: Orchestrator.dll
     environment:
       <<: *backend-env
+      ConnectionStrings__Postgres: "Host=postgres;Database=${POSTGRES_DB:-cdss};Username=orchestrator_svc;Password=${DB_PASSWORD_ORCHESTRATOR:-orchestrator-local-dev}"
       RecommendationService__BaseUrl: "http://rag-stub:8080"
       # Retry topic delays (§8.3). Defaults 30 s and 5 min; tests shorten them.
       Retry__FirstDelaySeconds: ${RETRY_FIRST_DELAY_SECONDS:-30}
