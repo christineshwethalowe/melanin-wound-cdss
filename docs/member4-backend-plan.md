@@ -27,7 +27,7 @@ and the pipeline recovered when Kafka came back.
 | 7 | Retry topics and dead-letter topic | §8.3, §11 | ✅ |
 | 8 | REST baseline endpoint | §13.1 | ✅ |
 | 9 | Per-service database roles (least privilege) | §9.4, §12 | ✅ |
-| 10 | Evaluation harness: device simulator, faults, metrics | §13 | ⬜ |
+| 10 | Evaluation harness: device simulator, faults, metrics | §13 | 🔨 part 1 (device simulator) ✅; part 2 (faults, metrics, experiments) next |
 | 11 | Observability: OpenTelemetry, Prometheus, Grafana | §13 | ⬜ |
 | 12 | Mobile: Drift queue + sync engine | §6 | ⬜ |
 
@@ -212,6 +212,25 @@ passes with the services running under these roles, which shows the grants are s
 - Fault scripts: kill a consumer, oversized event, replay a batch twice, slow stub, credential lockout.
 - SQL for each metric: sync latency, duplicate rate + DEDUPLICATED count, consumer lag,
   auditability completeness. Results exported as CSV for the report.
+
+**Part 1 ✅ device simulator** (`tests/device-simulator`, README there): 1–100 phones with the §6 queue, leases,
+backoff, gzip push, cursor pull, one clinician per device; event-driven or baseline mode; per-event CSV and a
+summary. `backend/tests/DeviceSimulator.Tests` (10 tests) checks its queue and backoff rules. A 100-device ×
+10-event run finishes all 1,000 events (894 advice, 106 superseded edits) with save-to-accepted p50 0.7 s / p95 2 s;
+the database matches it exactly.
+
+The first 100-device runs found three backend problems, fixed in the same step:
+
+- **Login under load**: the Argon2id check ran while holding a database connection and the credential row lock, so
+  100 simultaneous logins exhausted the identity service's pool (HTTP 500). The hash is now checked first with no
+  connection held (at most one check per CPU core at a time, 64 MB each); the transaction re-reads the row under
+  lock and only trusts the result if it was computed against the stored hash. Lockout, MFA and audit are unchanged.
+- **Pull livelock**: the 60 s re-send window shared one `LIMIT` with the rows after the cursor. With more recent
+  changes than the limit, every page was re-sent rows and `nextCursor` stopped advancing (62,514 pulls in one run).
+  The two are now read separately; only rows after the cursor decide `nextCursor` and `hasMore`.
+- **Connection budget**: each Npgsql pool defaulted to 100, enough for one service to take all of PostgreSQL's
+  connections. Pools are now bounded in docker-compose (identity 20, gateway 30, persister 10, relay 5,
+  orchestrator 10).
 
 ## Phase 11: Observability
 

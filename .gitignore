@@ -38,3 +38,6 @@ Thumbs.db
 
 # Local run logs
 .logs/
+
+# Device simulator output (tests/device-simulator/README.md)
+tests/device-simulator/results/

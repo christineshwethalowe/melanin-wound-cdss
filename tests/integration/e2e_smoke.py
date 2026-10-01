@@ -12,7 +12,7 @@ Test clinician (local dev only), created with:
 import os
 import sys
 
-from client import Checks, http, login, sql, uuid7, wait_for, wound_event
+from client import Checks, http, login, pull_all, sql, uuid7, wait_for, wound_event
 
 USERNAME = os.environ.get("E2E_USER", "n.silva")
 PASSWORD = os.environ.get("E2E_PASSWORD", "Demo-Pass-2026!")
@@ -76,10 +76,10 @@ check("outbox row published", wait_for(
     f"and published_at is not null", "1"))
 
 print("Phase 5: pull")
-status, body = http("GET", "/v1/sync/changes?cursor=0&limit=500", token=token)
-found = [c for c in (body or {}).get("changes", []) if c["assessmentId"] == assessment and c["type"] == "PERSISTED"]
-check("PERSISTED change visible on pull", status == 200 and len(found) == 1, f"{status}")
-check("nextCursor advances", status == 200 and body["nextCursor"] >= found[0]["seq"] if found else False)
+status, changes, cursor = pull_all(token)
+found = [c for c in changes if c["assessmentId"] == assessment and c["type"] == "PERSISTED"]
+check("PERSISTED change visible on pull", status == 200 and len(found) >= 1, f"{status}")
+check("nextCursor advances", status == 200 and cursor >= found[0]["seq"] if found else False)
 
 print("Phase 1: lockout (uses a second throwaway clinician if E2E_LOCKOUT_USER is set)")
 lock_user = os.environ.get("E2E_LOCKOUT_USER")

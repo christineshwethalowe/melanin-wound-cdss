@@ -21,11 +21,23 @@ public sealed class AuthService(NpgsqlDataSource db, PasswordHasher hasher, JwtT
     public const int MaxFailedAttempts = 5;
     public static readonly TimeSpan LockoutDuration = TimeSpan.FromMinutes(15);
 
+    /// <summary>
+    /// Argon2id uses 64 MB per check on purpose; bound how many run at once so a burst of logins (100 devices
+    /// reconnecting, §11) queues in memory instead of exhausting it.
+    /// </summary>
+    private readonly SemaphoreSlim _hashing = new(Math.Max(2, Environment.ProcessorCount));
+
     /// <param name="deviceId">Required for <see cref="Clients.Mobile"/>, null for <see cref="Clients.AdminDashboard"/>.</param>
     /// <param name="totp">Required once the clinician has MFA enabled. A wrong code counts as a failed attempt.</param>
     public async Task<AuthResult> LoginAsync(string username, string password, string? deviceId, string? totp,
         CancellationToken ct, string client = Clients.Mobile)
     {
+        // The slow password check runs first, holding no database connection and no row lock: done inside the
+        // transaction, 100 simultaneous logins kept every pooled connection busy hashing and the rest timed out
+        // (found by the §13 device simulator). The transaction below re-reads the row under lock and uses this
+        // result only if it was computed against the hash that is still stored.
+        var (checkedHash, passwordOk) = await PreVerifyPasswordAsync(username, password, ct);
+
         await using var conn = await db.OpenConnectionAsync(ct);
         await using var tx = await conn.BeginTransactionAsync(ct);
 
@@ -78,7 +90,12 @@ public sealed class AuthService(NpgsqlDataSource db, PasswordHasher hasher, JwtT
             return AuthResult.Fail("CREDENTIAL_LOCKED");
         }
 
-        if (!hasher.Verify(password, Convert.FromBase64String(passwordHash), salt))
+        // Normally the result from before the lock. If the hash changed in between (e.g. a password reset), check
+        // again against the stored one, so a stale result can never let anyone in.
+        var valid = passwordHash == checkedHash
+            ? passwordOk
+            : await VerifyAsync(password, passwordHash, salt, ct);
+        if (!valid)
             return await FailAttemptAsync("INVALID_CREDENTIALS");
 
         if (mfaEnabled && mfaSecret is not null)
@@ -133,6 +150,41 @@ public sealed class AuthService(NpgsqlDataSource db, PasswordHasher hasher, JwtT
         await AuthAudit.WriteAsync(conn, tx, "LOGIN", username, clinicianId, deviceId, true, null, ct);
         await tx.CommitAsync(ct);
         return AuthResult.Ok(pair);
+    }
+
+    /// <summary>
+    /// Reads the stored hash with a short query (connection returned at once), then checks the password with no
+    /// connection held. Skips the check for an unknown or locked account; the transaction answers those.
+    /// </summary>
+    private async Task<(string? Hash, bool Ok)> PreVerifyPasswordAsync(string username, string password, CancellationToken ct)
+    {
+        string hash; byte[] salt;
+        await using (var cmd = db.CreateCommand("""
+            SELECT cc.password_hash, cc.password_salt
+            FROM clinical.clinician c JOIN clinical.clinician_credential cc USING (clinician_id)
+            WHERE c.username = @u AND c.active AND (cc.locked_until IS NULL OR cc.locked_until <= now())
+            """))
+        {
+            cmd.Parameters.AddWithValue("u", username);
+            await using var r = await cmd.ExecuteReaderAsync(ct);
+            if (!await r.ReadAsync(ct)) return (null, false);
+            hash = r.GetString(0);
+            salt = (byte[])r[1];
+        }
+        return (hash, await VerifyAsync(password, hash, salt, ct));
+    }
+
+    private async Task<bool> VerifyAsync(string password, string hash, byte[] salt, CancellationToken ct)
+    {
+        await _hashing.WaitAsync(ct);
+        try
+        {
+            return hasher.Verify(password, Convert.FromBase64String(hash), salt);
+        }
+        finally
+        {
+            _hashing.Release();
+        }
     }
 
     /// <summary>Rotates both tokens: the old session is revoked and a new one issued.</summary>

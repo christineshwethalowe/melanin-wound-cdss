@@ -106,6 +106,9 @@ python tests/integration/e2e_orchestrator.py
 # REST baseline (§13.1): one synchronous request, no idempotency; compared with push on duplicates and waiting.
 python tests/integration/e2e_baseline.py
 
+# device simulator (§13.1): 1-100 phones with the real queue, login, push and pull; CSV + summary per run
+dotnet run --project tests/device-simulator -- --devices 10 --events 20
+
 # per-service database roles: insert-only audit, credentials readable only by the identity service
 python tests/integration/e2e_db_roles.py
 
