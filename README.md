@@ -109,6 +109,9 @@ dotnet run --project backend/apps/api-gateway --urls http://localhost:8080   # r
 dotnet run --project backend/apps/sync/ingest-persister
 dotnet run --project backend/apps/sync/outbox-relay
 
+# everything non-disruptive in one go, with a pass/fail summary (add --unit, --mobile or --all)
+python tests/check_backend.py
+
 # end-to-end check: login → push → Kafka → PostgreSQL → outbox → pull
 python tests/integration/e2e_smoke.py
 
