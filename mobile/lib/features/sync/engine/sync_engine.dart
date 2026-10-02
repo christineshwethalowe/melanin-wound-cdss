@@ -3,6 +3,7 @@ import 'dart:math';
 import '../api/sync_api.dart';
 import '../auth/auth_session.dart';
 import '../data/app_database.dart';
+import '../data/figure_repository.dart';
 import '../data/queue_repository.dart';
 import 'backoff.dart';
 
@@ -27,13 +28,17 @@ enum SyncOutcome {
 }
 
 class SyncReport {
-  SyncReport(this.outcome, {this.pushed = 0, this.accepted = 0, this.rejected = 0, this.changes = 0, this.retryAt, this.detail});
+  SyncReport(this.outcome,
+      {this.pushed = 0, this.accepted = 0, this.rejected = 0, this.changes = 0, this.figures = 0, this.retryAt, this.detail});
 
   final SyncOutcome outcome;
   final int pushed;
   final int accepted;
   final int rejected;
   final int changes;
+
+  /// Guideline figures cited by received advice and cached in this run (§10.4).
+  final int figures;
   final DateTime? retryAt;
   final String? detail;
 
@@ -58,7 +63,8 @@ class _Stop implements Exception {
 ///   3. the access token is refreshed first; with no usable session the run pauses for sign-in, queue untouched;
 ///   4. if anything waits to be sent: probe /health (reachability, not just connectivity), then push the oldest
 ///      batch (≤ 50 events / 256 KB, gzip) until the queue is empty, applying per-event results;
-///   5. pull every change after the cursor, cursor saved with the changes in one transaction.
+///   5. pull every change after the cursor, cursor saved with the changes in one transaction;
+///   6. best effort: cache the guideline figures the received advice cites, so they are there offline (§10.4).
 ///
 /// Failures follow §7.1: 401 → refresh and retry once; 413 → split the batch; 429/503, timeout or no answer → rows
 /// back to pending and back off (2 s doubling to 5 min, full jitter, Retry-After honoured). REJECTED rows are final.
@@ -68,17 +74,20 @@ class SyncEngine {
     required QueueRepository queue,
     required SyncApi api,
     required AuthSession auth,
+    FigureRepository? figures,
     DateTime Function()? clock,
     Random? random,
   })  : _queue = queue,
         _api = api,
         _auth = auth,
+        _figures = figures,
         _now = clock ?? DateTime.now,
         _backoff = Backoff(random);
 
   final QueueRepository _queue;
   final SyncApi _api;
   final AuthSession _auth;
+  final FigureRepository? _figures;
   final DateTime Function() _now;
   final Backoff _backoff;
 
@@ -123,7 +132,14 @@ class SyncEngine {
       _backoff.reset();
       await _queue.setState(SyncStateKeys.nextAttemptAt, '');
       await _queue.setState(SyncStateKeys.lastSuccessAt, _now().toIso8601String());
-      return SyncReport(SyncOutcome.success, pushed: pushed, accepted: accepted, rejected: rejected, changes: changes);
+
+      // Never affects the outcome: the advice itself is already stored, a figure can follow on the next sync.
+      var figures = 0;
+      try {
+        figures = await _figures?.prefetchMissing(token) ?? 0;
+      } catch (_) {}
+      return SyncReport(SyncOutcome.success,
+          pushed: pushed, accepted: accepted, rejected: rejected, changes: changes, figures: figures);
     } on NeedsSignIn catch (e) {
       return SyncReport(SyncOutcome.needsSignIn,
           pushed: pushed, accepted: accepted, rejected: rejected, changes: changes, detail: e.reason);

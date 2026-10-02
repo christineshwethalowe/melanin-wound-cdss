@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:melanin_wound_cdss/features/sync/api/sync_api.dart';
 import 'package:melanin_wound_cdss/features/sync/auth/auth_session.dart';
 import 'package:melanin_wound_cdss/features/sync/data/app_database.dart';
+import 'package:melanin_wound_cdss/features/sync/data/figure_repository.dart';
 import 'package:melanin_wound_cdss/features/sync/data/queue_repository.dart';
 import 'package:melanin_wound_cdss/features/sync/data/tables.dart';
 import 'package:melanin_wound_cdss/features/sync/engine/sync_engine.dart';
@@ -59,8 +60,17 @@ void main() {
     expect((await queue.counts()).of(QueueStatus.complete), 2);
     expect(await queue.recommendationFor(first['assessmentId'] as String, 2), isNotNull);
 
+    // A guideline figure through the gateway's figures proxy (§10.4; the stub serves F1-F3), cached with its licence.
+    final figures = FigureRepository(db, api, auth);
+    final figure = await figures.figureFor('iwgdf-2023.r1', 'F1');
+    expect(figure.isFound, isTrue, reason: '${figure.miss}');
+    expect(figure.figure!.contentType, 'image/png');
+    expect(figure.figure!.licence, isNotEmpty);
+    expect((await figures.figureFor('iwgdf-2023.r1', 'F404')).miss, FigureMiss.notFound);
+
     await auth.signOut();
     expect(await auth.hasSession(), isFalse);
+    expect((await figures.figureFor('iwgdf-2023.r1', 'F1')).isFound, isTrue, reason: 'cached: no session needed');
     await db.close();
     dir.deleteSync(recursive: true);
   }, skip: url == null ? 'set SYNC_BACKEND_URL (e.g. http://localhost:8080) with the Docker stack running' : false,

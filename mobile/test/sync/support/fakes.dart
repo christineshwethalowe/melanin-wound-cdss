@@ -56,13 +56,16 @@ enum PushFault {
 /// PERSISTED change per stored event and, optionally, a RECOMMENDATION_READY right after, and pages pull (§7.1, §7.2).
 class FakeGateway implements SyncApi {
   FakeGateway({this.autoRecommend = true, this.maxBatchBeforeSplit = 50, Random? random, this.faultRate = 0,
-      this.requireMfa = false})
+      this.requireMfa = false, this.recommendationFigures = const []})
       : _random = random ?? Random(1);
 
   /// When set, login needs the code 123456 (§7.3: MFA_REQUIRED, then INVALID_TOTP for a wrong one).
   final bool requireMfa;
 
   final bool autoRecommend;
+
+  /// Figure references every fake recommendation cites ({corpusVersion, figureId}), as §10.2's `figures` array.
+  final List<Map<String, String>> recommendationFigures;
   final int maxBatchBeforeSplit;
   final double faultRate;
   final Random _random;
@@ -175,6 +178,7 @@ class FakeGateway implements SyncApi {
             'sections': [
               {'heading': 'Fake', 'text': 'Fake advice [S1].', 'citationTags': ['S1']}
             ],
+            if (recommendationFigures.isNotEmpty) 'figures': recommendationFigures,
           },
       });
 
@@ -193,7 +197,27 @@ class FakeGateway implements SyncApi {
     return PullPage.fromJson({'changes': page, 'nextCursor': next, 'hasMore': after.length > limit});
   }
 
+  /// Figures the fake serves, by 'corpusVersion/figureId' (like the rag-stub's F1-F3).
+  final Map<String, List<int>> figures = {};
+  int figureRequests = 0;
+
+  /// The next figure request answers 502 FIGURE_UNAVAILABLE.
+  bool figureServiceDown = false;
+
   @override
-  Future<FigureResponse> figure(String accessToken, String corpusVersion, String figureId, {String? etag}) async =>
-      const FigureResponse(404, [], {});
+  Future<FigureResponse> figure(String accessToken, String corpusVersion, String figureId, {String? etag}) async {
+    if (!reachable) throw TransportException('unreachable');
+    figureRequests++;
+    if (accessToken != _validAccess) throw ApiException(401);
+    if (figureServiceDown) throw ApiException(502, 'FIGURE_UNAVAILABLE');
+    final bytes = figures['$corpusVersion/$figureId'];
+    if (bytes == null) return const FigureResponse(404, [], {});
+    return FigureResponse(200, bytes, {
+      'content-type': 'image/png',
+      'etag': '"$corpusVersion-$figureId"',
+      'x-figure-licence': 'CC BY-NC 4.0 (test)',
+      'x-figure-attribution': 'Test corpus',
+      'x-figure-tier': 'A',
+    });
+  }
 }
