@@ -40,6 +40,7 @@ builder.Services.AddSingleton<AuthService>();
 builder.Services.AddSingleton<MfaService>();
 builder.Services.AddSingleton<ClinicianAdminService>();
 builder.Services.AddSingleton<DeviceAdminService>();
+builder.Services.AddHostedService<AuthHealthSampler>();
 
 // Only reachable inside the Docker network, behind the API gateway, so forwarded headers are trusted as-is.
 builder.Services.Configure<ForwardedHeadersOptions>(o =>

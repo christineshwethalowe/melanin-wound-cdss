@@ -163,7 +163,9 @@ def run_once(scenario, mode, args, out_dir):
     toxiproxy.reset()
     # Devices start at the facility's current cursor, as phones already in use would: otherwise each new simulated
     # device first downloads the facility's whole history and the run measures that, not its own traffic.
-    head = metrics.psql_csv("select coalesce(max(server_seq), 0) as head from sync.change_log")[0]["head"]
+    # Housekeeping may have archived the newest rows of an idle facility, so the archive counts too.
+    head = metrics.psql_csv("select greatest((select max(server_seq) from sync.change_log), "
+                            "(select max(server_seq) from sync.change_log_archive), 0) as head")[0]["head"]
     setup()
     sampler, done = LagSampler(), threading.Event()
     action = threading.Thread(target=during, args=(done,), daemon=True)
@@ -236,6 +238,7 @@ def append_summary(r):
         "ablation_assessment_extra_rows": r["duplicates"].get("ablation", {}).get("assessment_extra_rows", ""),
         "ablation_recommendation_extra_rows": r["duplicates"].get("ablation", {}).get("recommendation_extra_rows", ""),
         "audit_completeness": r["auditability"].get("completeness"),
+        "login_failure_rate": r["auth"]["login_failure_rate"], "lockouts": r["auth"]["lockouts"],
         "max_lag_persister": r["max_lag"]["persister"], "max_lag_orchestrator": r["max_lag"]["orchestrator"],
         "wall_s": r["wall_s"],
     }

@@ -143,6 +143,37 @@ revoked; only rows every phone acknowledged are archived; the phone behind resum
 a whole-database check finds no archived row ahead of any active device's cursor; outbox and inbox rules).
 16 new checks in `e2e_db_roles.py`, 8 unit tests in `Housekeeping.Tests` (retention policy, option validation).
 
+### Phase 1e: auth-health metrics (§13 metric table: "login failure rate, lockouts per day, average session lifetime") ✅
+
+- **Definitions** (the same in `metrics.py` and on the dashboard):
+  - *Login failure rate* = failed attempts / attempts. A `LOCKOUT` row is the failed attempt that locked the account,
+    so it counts as a failure. `MFA_REQUIRED` is the server asking for a code, not a failed attempt, so it counts as
+    neither (the lockout counter ignores it too).
+  - *Lockouts per day* = `LOCKOUT` events in 24 hours.
+  - *Session lifetime*: a session is a login plus its chain of refreshes. Refresh rotates the token by ending one
+    `clinician_session` row and issuing another, so the new `family_id` column links them: a login starts a family,
+    each refresh carries it on (`clinical/0009_session_family.sql`, with a default so the previous service version
+    still works). Lifetime = login to logout or revocation (logout, deactivation, device revocation). Sessions whose
+    refresh token expired unused are counted apart, because their last use is not recorded precisely.
+- **Identity service** (`AuthMetrics`, `AuthHealthSampler`): every `audit.auth_audit` write also increments
+  `auth_events_total{action, success, reason}`. Once a minute the sampler reads the session table and exports
+  `auth_sessions_active{client}`, `auth_session_lifetime_seconds{client, state=active|ended}` and
+  `auth_sessions_ended{client, how=revoked|expired}` for the last 24 hours. The counter series the dashboard reads are
+  created at 0 on startup, because Prometheus' `increase()` ignores the first value of a new series.
+- **Grafana**: new row "Auth health" with login failure rate, lockouts per day, average session lifetime (mobile,
+  ended in 24 h), active sessions, login attempts by result, and lifetime by client.
+- **`metrics.py`**: `auth_health(since, until)` returns logins, failures, lockouts, MFA prompts, failure rate,
+  lockouts per day, failures by reason, and sessions started, ended and active at the end, with mean and median
+  lifetime. Every evaluation run includes it, and summary.csv gains `login_failure_rate` and `lockouts`.
+  `python tests/evaluation/metrics.py auth [hours]` prints it for any period.
+- `run_experiment.py` now starts simulated devices at the head of the change log *or* its archive, because
+  housekeeping may archive an idle facility's newest rows.
+
+**Verified:** `python tests/integration/e2e_auth_health.py` (17 checks): known traffic gives exactly 2 logins,
+5 failures, 1 lockout and rate 5/7. The MFA prompt is not counted. A refresh stays in its login's family. The logout
+gives a lifetime of about 3 s across the refresh. The counters and gauges reach Prometheus. Every new dashboard query
+evaluates in Prometheus.
+
 ## Phase 2: Push
 
 - `POST /v1/sync/push` needs a JWT. Body: `{ deviceId, batchId, events[] }`.

@@ -138,6 +138,10 @@ dotnet run --project tests/device-simulator -- --devices 10 --events 20
 docker compose --profile tools up -d toxiproxy
 python tests/evaluation/run_experiment.py loss --devices 10 --events 10
 
+# auth health (§13): login failure rate, lockouts per day, average session lifetime (metrics.py + Grafana)
+python tests/integration/e2e_auth_health.py
+python tests/evaluation/metrics.py auth 24      # the same numbers for the last 24 hours
+
 # housekeeping (§9.4): outbox cleanup, change-log archival (no device misses a change), inbox retention
 python tests/integration/e2e_housekeeping.py
 docker compose run --rm housekeeping run-once   # one cycle by hand; prints what it removed
