@@ -1,0 +1,27 @@
+using Confluent.Kafka;
+using IngestPersister.Consumers;
+using IngestPersister.Persistence;
+using Npgsql;
+using Sync.Common.Kafka;
+using Sync.Common.Persistence;
+
+// Ingest persister (architecture §4): consumes wound-events in its own group and writes PostgreSQL.
+// Scale by running more instances, up to the partition count of wound-events.
+var builder = Host.CreateApplicationBuilder(args);
+
+var dataSource = NpgsqlDataSource.Create(
+    builder.Configuration.GetConnectionString("Postgres")
+    ?? "Host=localhost;Username=cdss;Password=cdss;Database=cdss");
+
+builder.Services.AddSingleton(dataSource);
+builder.Services.AddSingleton<PersisterTransaction>();
+builder.Services.AddSingleton<IProducer<string, byte[]>>(_ => new ProducerBuilder<string, byte[]>(
+    KafkaDefaults.Producer(builder.Configuration["Kafka:BootstrapServers"] ?? KafkaDefaults.DefaultBootstrapServers)).Build());
+builder.Services.AddHostedService<WoundEventsConsumer>();
+
+var host = builder.Build();
+
+if (!builder.Configuration.GetValue<bool>("SkipSchemaCheck"))
+    await SchemaVersionGuard.EnsureAsync(dataSource, ExpectedSchemaVersions.All);
+
+await host.RunAsync();

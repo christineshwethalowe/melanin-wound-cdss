@@ -1,0 +1,32 @@
+name: melanin_wound_cdss
+description: Offline-first wound assessment for melanin-rich skin (J26-SE-330).
+publish_to: none
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.5.0
+  flutter: ">=3.24.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # Member 4: offline queue and sync
+  drift: ^2.20.0
+  sqlcipher_flutter_libs: ^0.6.0     # encrypted Drift database at rest (§6, §12)
+  flutter_secure_storage: ^9.2.0     # refresh token + DB key in the Android Keystore
+  http: ^1.2.0
+  uuid: ^4.4.0                       # client-generated UUIDv7 event ids (§5)
+  connectivity_plus: ^6.0.0
+  path_provider: ^2.1.0
+  path: ^1.9.0
+  # Members 1 and 2 add their on-device ML dependencies here (LiteRT, camera, FFI).
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  drift_dev: ^2.20.0
+  build_runner: ^2.4.0
+
+flutter:
+  uses-material-design: true

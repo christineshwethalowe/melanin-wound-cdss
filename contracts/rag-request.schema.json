@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://j26-se-330/contracts/rag-request/0.1",
+  "title": "Recommendation Request",
+  "$comment": "DRAFT. Placeholder for architecture §10.2. Fields are examples until agreed by the owning members.",
+  "type": "object"
+}
