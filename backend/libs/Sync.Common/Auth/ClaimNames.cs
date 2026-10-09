@@ -9,4 +9,5 @@ public static class ClaimNames
     public const string DeviceId = "device_id";
     public const string FacilityId = "facility_id";
     public const string Role = "role";
+    public const string ClientId = "client_id";
 }

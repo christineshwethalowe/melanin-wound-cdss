@@ -27,7 +27,6 @@ jobs:
 
   mobile:
     runs-on: ubuntu-latest
-    if: hashFiles('mobile/pubspec.yaml') != ''
     defaults:
       run:
         working-directory: mobile
@@ -39,4 +38,7 @@ jobs:
       - run: flutter pub get
       - run: dart run build_runner build --delete-conflicting-outputs
       - run: flutter analyze
-      - run: flutter test
+      # hashFiles() is only allowed in step conditions, not job conditions. Skip until the first test exists
+      # (flutter test fails on an empty test folder).
+      - if: hashFiles('mobile/test/**/*_test.dart') != ''
+        run: flutter test

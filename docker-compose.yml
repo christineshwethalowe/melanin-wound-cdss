@@ -133,7 +133,28 @@ services:
 
   # ---- Member 4 backend units (§4) ------------------------------------------------------------
 
+  # The only public port (ADR 0004). Routes /v1/auth, /v1/admin, /.well-known -> identity-service and
+  # /v1/sync, /v1/patients, /v1/figures, /v1/baseline, /health -> sync-gateway.
+  api-gateway:
+    <<: *backend
+    image: melanin-wound-cdss/api-gateway
+    build:
+      <<: *backend-build
+      args:
+        PROJECT: backend/apps/api-gateway/ApiGateway.csproj
+        ENTRY: ApiGateway.dll
+    ports:
+      - "8080:8080"
+    environment:
+      Jwt__MetadataAddress: "http://identity-service:8080/.well-known/openid-configuration"
+      ReverseProxy__Clusters__identity__Destinations__d1__Address: "http://identity-service:8080/"
+      ReverseProxy__Clusters__sync__Destinations__d1__Address: "http://sync-gateway:8080/"
+    depends_on:
+      - identity-service
+      - sync-gateway
+
   # Issues and signs every token (ADR 0003); other services fetch its public keys from /.well-known/jwks.json.
+  # Reached only through the api-gateway.
   identity-service:
     <<: *backend
     image: melanin-wound-cdss/identity-service
@@ -142,8 +163,6 @@ services:
       args:
         PROJECT: backend/apps/identity-service/IdentityService.csproj
         ENTRY: IdentityService.dll
-    ports:
-      - "8085:8080"
     environment:
       <<: *backend-env
       # Local development values. Without Jwt__SigningKeyPem a key is generated at start-up (restart = devices refresh).
@@ -161,8 +180,6 @@ services:
       args:
         PROJECT: backend/apps/sync/sync-gateway/SyncGateway.csproj
         ENTRY: SyncGateway.dll
-    ports:
-      - "8080:8080"
     environment:
       <<: *backend-env
       Jwt__MetadataAddress: "http://identity-service:8080/.well-known/openid-configuration"

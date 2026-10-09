@@ -1,6 +1,9 @@
 <Solution>
   <Folder Name="/backend/" />
   <Folder Name="/backend/apps/" />
+  <Folder Name="/backend/apps/api-gateway/">
+    <Project Path="backend/apps/api-gateway/ApiGateway.csproj" />
+  </Folder>
   <Folder Name="/backend/apps/identity-service/">
     <Project Path="backend/apps/identity-service/IdentityService.csproj" />
   </Folder>

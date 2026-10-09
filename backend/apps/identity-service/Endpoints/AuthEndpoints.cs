@@ -4,7 +4,8 @@ using Sync.Common.Auth;
 
 namespace IdentityService.Endpoints;
 
-public sealed record LoginRequest(string Username, string Password, string DeviceId, string? Totp);
+/// <param name="ClientId">"mobile" (default, needs DeviceId) or "admin-dashboard" (no DeviceId, admins only).</param>
+public sealed record LoginRequest(string Username, string Password, string? DeviceId, string? Totp, string? ClientId = null);
 public sealed record RefreshRequest(string RefreshToken);
 public sealed record MfaConfirmRequest(string Code);
 
@@ -16,14 +17,22 @@ public static class AuthEndpoints
         var auth = group.MapGroup("/auth");
 
         // 401 codes: INVALID_CREDENTIALS, CREDENTIAL_LOCKED, MFA_REQUIRED (ask for a code), INVALID_TOTP,
-        // DEVICE_NOT_ALLOWED. The offline queue on the device is never affected by any of them.
+        // DEVICE_NOT_ALLOWED, CLIENT_NOT_ALLOWED (dashboard login by a non-admin). The offline queue on the
+        // device is never affected by any of them.
         auth.MapPost("/login", async (LoginRequest req, AuthService service, CancellationToken ct) =>
         {
-            if (string.IsNullOrWhiteSpace(req.Username) || string.IsNullOrWhiteSpace(req.Password) ||
-                string.IsNullOrWhiteSpace(req.DeviceId))
-                return Results.BadRequest(new { code = "MISSING_FIELDS" });
+            var client = req.ClientId ?? Clients.Mobile;
+            if (!Clients.IsKnown(client)) return Results.BadRequest(new { code = "UNKNOWN_CLIENT" });
 
-            return ToHttp(await service.LoginAsync(req.Username, req.Password, req.DeviceId, req.Totp, ct));
+            var hasDevice = !string.IsNullOrWhiteSpace(req.DeviceId);
+            if (string.IsNullOrWhiteSpace(req.Username) || string.IsNullOrWhiteSpace(req.Password) ||
+                (client == Clients.Mobile && !hasDevice))
+                return Results.BadRequest(new { code = "MISSING_FIELDS" });
+            if (client == Clients.AdminDashboard && hasDevice)
+                return Results.BadRequest(new { code = "DEVICE_NOT_EXPECTED" });
+
+            return ToHttp(await service.LoginAsync(req.Username, req.Password, hasDevice ? req.DeviceId : null,
+                req.Totp, ct, client));
         }).AllowAnonymous();
 
         auth.MapPost("/refresh", async (RefreshRequest req, AuthService service, CancellationToken ct) =>

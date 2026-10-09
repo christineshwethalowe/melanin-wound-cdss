@@ -25,6 +25,7 @@ melanin-wound-cdss/
 ├── contracts/            # JSON Schemas every component builds against (the Wound Event, sync, auth, RAG)
 ├── mobile/               # Flutter app: calibration → measurement → Drift queue → sync engine
 ├── backend/
+│   ├── apps/api-gateway/             # Member 4: YARP edge, the only public port (routing, rate limits, CORS)
 │   ├── apps/identity-service/        # Member 4: login, MFA, clinician admin; signs RS256 tokens, publishes JWKS
 │   ├── apps/sync/        # Member 4: sync-gateway, ingest-persister, outbox-relay, orchestrator
 │   ├── apps/recommendation-service/   # Member 3
@@ -48,19 +49,18 @@ docker compose up -d --build
 ```
 
 This starts Kafka, Postgres, creates the topics, applies the migrations and seed, creates two demo users,
-then starts the identity service, Sync Gateway, ingest persister, outbox relay, orchestrator and the Recommendation Service stub.
+then starts the API gateway, identity service, Sync Gateway, ingest persister, outbox relay, orchestrator and the Recommendation Service stub.
 
 | What | Where |
 |------|-------|
-| Sync Gateway | http://localhost:8080 (`/health`, `/v1/sync/*`, `/v1/patients/*`) |
-| Identity service | http://localhost:8085 (`/v1/auth/*`, `/v1/admin/*`, `/.well-known/openid-configuration`) |
+| API gateway (the only backend URL) | http://localhost:8080: `/v1/auth/*`, `/v1/admin/*`, `/.well-known/*` → identity service; `/health`, `/v1/sync/*`, `/v1/patients/*`, `/v1/figures/*` → Sync Gateway |
 | Recommendation Service stub | http://localhost:5080 |
 | Kafka UI | http://localhost:8081 |
 | PostgreSQL | `localhost:5432` (cdss / cdss) |
 | Demo users (local only) | `admin.demo` / `Demo-Admin-2026!` (admin), `n.silva` / `Demo-Pass-2026!` (nurse), facility `fac-001` |
 
 ```bash
-docker compose logs -f identity-service sync-gateway   # follow logs
+docker compose logs -f api-gateway identity-service sync-gateway   # follow logs
 docker compose down                                    # stop (keeps data)
 docker compose down -v                                 # stop and delete Kafka + Postgres data
 ```
@@ -85,7 +85,8 @@ dotnet run --project backend/apps/identity-service -- create-clinician n.silva D
 
 # run the pipeline (separate terminals)
 dotnet run --project backend/apps/identity-service --urls http://localhost:8085
-dotnet run --project backend/apps/sync/sync-gateway --urls http://localhost:8080
+dotnet run --project backend/apps/sync/sync-gateway --urls http://localhost:8086
+dotnet run --project backend/apps/api-gateway --urls http://localhost:8080   # routes to 8085 and 8086
 dotnet run --project backend/apps/sync/ingest-persister
 dotnet run --project backend/apps/sync/outbox-relay
 
@@ -94,11 +95,21 @@ python tests/integration/e2e_smoke.py
 
 # registration, MFA, patient alias and audit trail (build step 2)
 python tests/integration/e2e_step2_auth_admin.py
+
+# admin dashboard sessions: no device, admins only, refused by the Sync Gateway (ADR 0005)
+python tests/integration/e2e_dashboard_client.py
+
+# whole stack against the architecture, section by section, including §11 failures.
+# Disruptive (stops Kafka, replays the topic, scales services); Docker stack only, takes a few minutes.
+python tests/integration/e2e_architecture.py
 ```
 
 Tokens are signed by the identity service with RS256; other services validate them locally against its
 public keys at `/.well-known/jwks.json` ([ADR 0003](docs/decisions/0003-identity-service.md)). Locally the
 signing key is generated at start-up, so restarting the identity service makes devices refresh their token.
+All client traffic goes through the API gateway ([ADR 0004](docs/decisions/0004-api-gateway.md)), which also
+checks the token, rate-limits login (`RateLimits` in its `appsettings.json`; raise them for load tests) and
+allows CORS only for the admin dashboard origin.
 Outside local development, set these for the identity service instead of using the defaults:
 
 - `Jwt__SigningKeyPem`: RSA private key in PEM, e.g. from `openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048`

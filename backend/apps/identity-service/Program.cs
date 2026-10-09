@@ -51,7 +51,7 @@ builder.Services
         o.TokenValidationParameters = new TokenValidationParameters
         {
             ValidIssuer = jwt.Issuer,
-            ValidAudience = jwt.Audience,
+            ValidAudiences = [jwt.Audience, jwt.DashboardAudience],
             IssuerSigningKey = signingKey.PublicKey,
             ValidAlgorithms = [SecurityAlgorithms.RsaSha256],
             ClockSkew = TimeSpan.FromSeconds(30),
