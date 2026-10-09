@@ -73,6 +73,25 @@ public static class PullEndpoint
 
             var hasMore = changes.Count > take;
             if (hasMore) changes.RemoveAt(changes.Count - 1);
+
+            // Last provenance stage (§12): advice handed to the device. Once per event; a re-pull adds nothing.
+            var delivered = changes.Where(c => c.Type == "RECOMMENDATION_READY").ToList();
+            if (delivered.Count > 0)
+            {
+                await using var mark = new NpgsqlCommand("""
+                    INSERT INTO audit.provenance (event_id, stage, outcome, device_id)
+                    SELECT wa.event_id, 'DELIVERED', 'OK', @d
+                    FROM clinical.wound_assessment wa
+                    JOIN unnest(@a, @r) AS x(assessment_id, revision)
+                      ON wa.assessment_id = x.assessment_id AND wa.revision = x.revision
+                    WHERE NOT EXISTS (SELECT 1 FROM audit.provenance p
+                                      WHERE p.event_id = wa.event_id AND p.stage = 'DELIVERED')
+                    """, conn);
+                mark.Parameters.AddWithValue("d", device);
+                mark.Parameters.AddWithValue("a", delivered.Select(c => c.AssessmentId).ToArray());
+                mark.Parameters.AddWithValue("r", delivered.Select(c => c.Revision).ToArray());
+                await mark.ExecuteNonQueryAsync(ct);
+            }
             var nextCursor = changes.Count == 0 ? after : Math.Max(after, changes.Max(c => c.Seq));
 
             return Results.Ok(new { changes, nextCursor, hasMore });

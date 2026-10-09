@@ -8,6 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="JsonSchema.Net" />
     <PackageReference Include="Microsoft.Agents.AI.Workflows" />
     <PackageReference Include="Microsoft.Extensions.Hosting" />
     <PackageReference Include="Microsoft.Extensions.Http.Resilience" />
@@ -15,5 +16,15 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\..\libs\Sync.Common\Sync.Common.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The RAG contract (architecture §10.2), copied next to the binary for ValidateResponse. -->
+    <None Include="..\..\..\..\contracts\rag-response.schema.json" Link="contracts\rag-response.schema.json"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Orchestrator.Tests" />
   </ItemGroup>
 </Project>

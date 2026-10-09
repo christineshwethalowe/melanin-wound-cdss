@@ -2,7 +2,9 @@
 // Stands in for Member 3's service so the orchestrator and the REST baseline can be benchmarked
 // against the same, controllable dependency. Behaviour is set with environment variables:
 //   STUB_DELAY_MS   extra latency per call (default 0)
-//   STUB_FAIL_MODE  none | 503 | 422 | 409 (default none)
+//   STUB_FAIL_MODE  none | 503 | 422 | 409 | uncited (default none)
+//                   uncited answers 200 with a section whose citation tag does not resolve (§10.1 ValidateResponse)
+// The answer is a fixed, contract-valid shape (rag-response 1.0); its text is placeholder, not clinical advice.
 var builder = WebApplication.CreateBuilder(args);
 var app = builder.Build();
 
@@ -28,8 +30,16 @@ app.MapPost("/v1/recommendations", async (StubRequest request) =>
             mode = "extractive",
             retrievalMode = "hybrid",
             corpusVersion = "stub-0",
-            sections = Array.Empty<object>(),
-            citations = Array.Empty<object>(),
+            sections = new[]
+            {
+                new
+                {
+                    heading = "Stub guidance",
+                    text = "Placeholder text from the Recommendation Service stub [S1].",
+                    citationTags = new[] { failMode == "uncited" ? "S9" : "S1" },
+                },
+            },
+            citations = new[] { new { tag = "S1", chunkHash = "stub-chunk-0001", source = "stub corpus" } },
             withheld = Array.Empty<object>(),
         }),
     };

@@ -375,7 +375,6 @@ check("login is rate-limited per IP with 429", 429 in codes, codes[-3:])
 section("Not built yet (expected gaps)")
 if sql("select count(*) from clinical.recommendation") == "0":
     gap("§10 orchestrator: no recommendations produced", "phase 6, executors are TODO stubs")
-gap("§8.3 retry topics through the orchestrator", "phase 7")
 status, _ = http("POST", "/v1/baseline/assessments", {})
 if status in (401, 501):
     gap("§13.1 REST baseline endpoint", f"phase 8, returns {status}")

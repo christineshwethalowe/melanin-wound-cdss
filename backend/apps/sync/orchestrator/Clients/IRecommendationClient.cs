@@ -1,8 +1,10 @@
+using System.Net.Http.Json;
 using System.Text.Json;
 using Sync.Common.Contracts;
 
 namespace Orchestrator.Clients;
 
+/// <summary>StatusCode 0 means no HTTP answer at all (timeout, unreachable, open circuit); Error then says why.</summary>
 public sealed record RecommendationCallResult(int StatusCode, JsonElement? Body, string? Error);
 
 /// <summary>
@@ -16,16 +18,36 @@ public interface IRecommendationClient
 }
 
 /// <summary>
-/// HTTP implementation. The named HttpClient "recommendation-service" (Program.cs) carries the timeout;
-/// retries and the circuit breaker are added with Microsoft.Extensions.Http.Resilience in plan phase 6.
+/// HTTP implementation. The named HttpClient "recommendation-service" (Program.cs) carries the resilience
+/// pipeline: 60 s per attempt, bounded retries with backoff, and a circuit breaker. Never throws for an HTTP
+/// status or a transport failure; CallRag maps the result.
 /// </summary>
-public sealed class HttpRecommendationClient(IHttpClientFactory factory) : IRecommendationClient
+public sealed class HttpRecommendationClient(IHttpClientFactory factory, ILogger<HttpRecommendationClient> logger)
+    : IRecommendationClient
 {
-    public Task<RecommendationCallResult> RecommendAsync(RecommendationRequest request, CancellationToken ct)
+    public const string ClientName = "recommendation-service";
+
+    public async Task<RecommendationCallResult> RecommendAsync(RecommendationRequest request, CancellationToken ct)
     {
-        // TODO(phase 6): POST /v1/recommendations with the request serialized as camelCase JSON; return the status
-        // code and body. Do not throw for 4xx/5xx — CallRag maps them.
-        _ = factory;
-        throw new NotImplementedException("Plan phase 6: HttpRecommendationClient");
+        try
+        {
+            using var response = await factory.CreateClient(ClientName)
+                .PostAsJsonAsync("v1/recommendations", request, JsonSerializerOptions.Web, ct);
+            var text = await response.Content.ReadAsStringAsync(ct);
+            JsonElement? body = null;
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                try { body = JsonDocument.Parse(text).RootElement.Clone(); }
+                catch (JsonException) { /* not JSON: ValidateResponse reports it */ }
+            }
+            return new RecommendationCallResult((int)response.StatusCode, body,
+                response.IsSuccessStatusCode ? null : $"HTTP {(int)response.StatusCode}");
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            // Timeout (Polly TimeoutRejectedException), open circuit (BrokenCircuitException) or unreachable.
+            logger.LogWarning("Recommendation Service call for case {CaseId} failed: {Error}", request.CaseId, ex.Message);
+            return new RecommendationCallResult(0, null, $"{ex.GetType().Name}: {ex.Message}");
+        }
     }
 }

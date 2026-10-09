@@ -1,23 +1,24 @@
 using Microsoft.Agents.AI.Workflows;
-using Npgsql;
 using Orchestrator.Graph;
+using Orchestrator.Persistence;
 
 namespace Orchestrator.Executors;
 
 /// <summary>
 /// If a higher revision of the same assessment is already stored, marks this one SUPERSEDED and ends the
-/// run (architecture §10.1). Needed because retry topics can reorder revisions.
-/// Takes the advisory lock on assessment_id, then SELECT ... FOR UPDATE on the latest row (§9.3 lock order).
-/// Terminal: no failure path.
+/// run (architecture §10.1). Needed because retry topics can reorder revisions, and because a device can push
+/// revisions 1 and 2 together: only the newest one gets advice. Advisory lock first, then SELECT ... FOR UPDATE
+/// on the latest row (§9.3 lock order).
 /// </summary>
-public sealed class SupersedeCheckExecutor(NpgsqlDataSource db) : Executor<InboxChecked, SupersedeChecked>("SupersedeCheck")
+[YieldsOutput(typeof(OrchestrationOutcome))]
+public sealed class SupersedeCheckExecutor(IOrchestratorStore store) : Executor<InboxChecked, SupersedeChecked>("SupersedeCheck")
 {
-    public override ValueTask<SupersedeChecked> HandleAsync(InboxChecked message, IWorkflowContext context,
+    public override async ValueTask<SupersedeChecked> HandleAsync(InboxChecked message, IWorkflowContext context,
         CancellationToken cancellationToken = default)
     {
-        // TODO(phase 6): compare message.Event.Revision with MAX(revision) for the assessment; if lower,
-        // UPDATE status = 'SUPERSEDED', add a SUPERSEDED change_log row, and yield OutcomeKind.Superseded.
-        _ = db;
-        throw new NotImplementedException("Plan phase 6: SupersedeCheck");
+        var superseded = await store.SupersedeIfOutdatedAsync(message.Job, cancellationToken);
+        if (superseded)
+            await context.YieldOutputAsync(new OrchestrationOutcome(message.Job.Event, OutcomeKind.Superseded), cancellationToken);
+        return new SupersedeChecked(message.Job, superseded);
     }
 }

@@ -5,40 +5,53 @@ namespace Orchestrator.Graph;
 
 // Typed messages passed along the workflow edges (architecture §10.1):
 //
-//   PersistedEvent ─► InboxCheck ─► SupersedeCheck ─► BuildContext ─► CallRag ─► ValidateResponse ─► PersistResult
-//                         │               │                              │               │
-//                         └ already done  └ superseded                   └ deferred      └ invalid
-//                           (end)           (end)                          (retry topic)   (retry, then DLQ)
+//   OrchestrationJob ─► InboxCheck ─► SupersedeCheck ─► BuildContext ─► CallRag ─► ValidateResponse ─► PersistResult
+//                           │               │                │              │               │                │
+//                           └ processed     └ superseded     └ not found    └ deferred /    └ invalid        └ stored
+//                                                                             contract error
 //
-// Every run ends by yielding one OrchestrationOutcome, which the consumer uses to decide whether to commit
-// the Kafka offset or route the message to a retry topic / the DLQ.
+// Every run ends with exactly one OrchestrationOutcome, yielded by whichever executor ended it. The consumer
+// uses it to decide whether to commit the Kafka offset or route the message to a retry topic / the DLQ.
 
-public sealed record InboxChecked(PersistedEvent Event, bool AlreadyProcessed);
+/// <summary>Workflow input: the persisted event plus the trace it belongs to (from the Kafka headers).</summary>
+public sealed record OrchestrationJob(PersistedEvent Event, string? TraceId);
 
-public sealed record SupersedeChecked(PersistedEvent Event, bool Superseded);
+public sealed record InboxChecked(OrchestrationJob Job, bool AlreadyProcessed);
 
-public sealed record RagCallResult(PersistedEvent Event, RecommendationRequest Request, RagCallStatus Status,
+public sealed record SupersedeChecked(OrchestrationJob Job, bool Superseded);
+
+/// <summary>Request is null when the stored assessment cannot be found (should never happen: same transaction).</summary>
+public sealed record ContextBuilt(OrchestrationJob Job, RecommendationRequest? Request);
+
+public sealed record RagCallResult(OrchestrationJob Job, RecommendationRequest Request, RagCallStatus Status,
     JsonElement? Body, string? Error);
 
 public enum RagCallStatus
 {
-    /// <summary>200 (generated or extractive — both are successes, §10.3).</summary>
+    /// <summary>200 (generated or extractive: both are successes, §10.3).</summary>
     Ok,
-    /// <summary>Timeout, 503 or open circuit: record ADVICE_DEFERRED and retry via the retry topics.</summary>
+    /// <summary>Timeout, 503, open circuit or unreachable: ADVICE_DEFERRED, then the retry topics.</summary>
     Deferred,
     /// <summary>422 or 409: a contract or ordering bug. No retry; straight to the DLQ.</summary>
     ContractError,
 }
 
-public sealed record ValidatedRecommendation(PersistedEvent Event, RecommendationResponse Response, JsonElement RawBody);
+/// <summary>Error is set when the response failed validation; Response is then null.</summary>
+public sealed record ValidatedRecommendation(OrchestrationJob Job, RecommendationResponse? Response, JsonElement RawBody,
+    string? Error);
 
-public sealed record OrchestrationOutcome(PersistedEvent Event, OutcomeKind Kind, string? Detail = null);
+public sealed record OrchestrationOutcome(PersistedEvent Event, OutcomeKind Kind, string? Detail = null)
+{
+    /// <summary>Whether the consumer sends the message on to the next retry topic.</summary>
+    public bool Retry => Kind is OutcomeKind.Deferred or OutcomeKind.Failed;
+}
 
 public enum OutcomeKind
 {
     Stored,            // recommendation + change log + provenance + outbox written; commit the offset
     AlreadyProcessed,  // inbox hit; commit the offset
     Superseded,        // a newer revision exists; marked SUPERSEDED; commit the offset
-    Deferred,          // ADVICE_DEFERRED recorded; send to the next retry topic, then commit
-    DeadLetter,        // contract error or invalid response after retries; send to the DLQ, then commit
+    Deferred,          // RAG unavailable or answer invalid: ADVICE_DEFERRED, next retry topic, then commit
+    DeadLetter,        // contract error or missing assessment: ADVICE_DEFERRED, DLQ, then commit
+    Failed,            // an executor threw (e.g. database down): next retry topic, then commit
 }
