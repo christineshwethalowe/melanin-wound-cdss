@@ -2,10 +2,7 @@ using System.Text.Json;
 
 namespace Sync.Common.Recommendations;
 
-/// <summary>
-/// A stored assessment and the earlier captures of the same wound: what both the orchestrator's BuildContext
-/// step and the REST baseline turn into a Recommendation Service request (architecture §10.1, §13.1).
-/// </summary>
+/// <summary>A stored assessment plus the wound's earlier captures, used to build the recommendation request.</summary>
 public sealed record AssessmentContext(
     Guid AssessmentId,
     int Revision,

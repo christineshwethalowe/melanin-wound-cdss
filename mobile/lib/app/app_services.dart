@@ -8,32 +8,29 @@ import '../features/sync/api/sync_api.dart';
 import '../features/sync/auth/auth_session.dart';
 import '../features/sync/data/app_database.dart';
 import '../features/sync/data/figure_repository.dart';
+import '../features/sync/data/patient_repository.dart';
 import '../features/sync/data/queue_repository.dart';
 import '../features/sync/engine/sync_engine.dart';
 import '../features/sync/engine/sync_scheduler.dart';
 
-/// Where the app reaches the backend: the API gateway (ADR 0004). Set at build time:
-///   flutter run --dart-define=SYNC_BASE_URL=http://192.168.1.20:8080
-/// The default is the Android emulator's address for the host machine.
+/// Backend address, set with --dart-define=SYNC_BASE_URL=...; defaults to the emulator's host address.
 const syncBaseUrl = String.fromEnvironment('SYNC_BASE_URL', defaultValue: 'http://10.0.2.2:8080');
 
-/// Everything the sync needs, wired once at start-up. Other features use [queue] to save assessments and call
-/// [scheduler].onSaved() afterwards, and [figures] to show the guideline figures advice cites
-/// (docs/integration/mobile-sync-layer.md).
+/// Sync services wired once at start-up: save with [queue], then call [scheduler].onSaved(); show figures with [figures].
 class AppServices {
-  AppServices({required this.db, required this.queue, required this.figures, required this.api, required this.auth,
-      required this.engine, required this.scheduler});
+  AppServices({required this.db, required this.queue, required this.figures, required this.patients, required this.api,
+      required this.auth, required this.engine, required this.scheduler});
 
   final AppDatabase db;
   final QueueRepository queue;
   final FigureRepository figures;
+  final PatientRepository patients;
   final SyncApi api;
   final AuthSession auth;
   final SyncEngine engine;
   final SyncScheduler scheduler;
 
-  /// On the phone: the encrypted database in app support storage, the key and refresh token in the Keystore,
-  /// connectivity from the platform. Tests pass in-memory replacements.
+  /// Real phone setup: encrypted DB, Keystore secrets and platform connectivity; tests pass fakes.
   static Future<AppServices> open({
     AppDatabase? db,
     SecretStore? secrets,
@@ -54,17 +51,25 @@ class AppServices {
     final client = api ?? HttpSyncApi(Uri.parse(syncBaseUrl));
     final auth = AuthSession(client, store, clock: clock);
     final figures = FigureRepository(database, client, auth, clock: clock);
-    final engine = SyncEngine(queue: queue, api: client, auth: auth, figures: figures, clock: clock);
+    final patients = PatientRepository(database, client, clock: clock);
+    final engine =
+        SyncEngine(queue: queue, api: client, auth: auth, figures: figures, patients: patients, clock: clock);
     final scheduler = SyncScheduler(engine.sync,
         online: online ??
             Connectivity().onConnectivityChanged.map((r) => r.any((c) => c != ConnectivityResult.none)),
         clock: clock);
     return AppServices(
-        db: database, queue: queue, figures: figures, api: client, auth: auth, engine: engine, scheduler: scheduler);
+        db: database,
+        queue: queue,
+        figures: figures,
+        patients: patients,
+        api: client,
+        auth: auth,
+        engine: engine,
+        scheduler: scheduler);
   }
 
-  /// Signs in with this phone's device id and caches who is signed in for offline display (auth_local, §6: never
-  /// the refresh token).
+  /// Signs in with this phone's device id and caches who's signed in for offline display.
   Future<Clinician> signIn({required String username, required String password, String? totp}) async {
     final clinician =
         await auth.signIn(username: username, password: password, deviceId: await queue.deviceId(), totp: totp);

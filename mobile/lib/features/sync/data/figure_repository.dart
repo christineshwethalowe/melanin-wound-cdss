@@ -32,13 +32,7 @@ class FigureLookup {
   bool get isFound => figure != null;
 }
 
-/// Guideline figures on the device (architecture §6 figures_local, §10.4). A recommendation lists the figures it
-/// cites (`figures: [{corpusVersion, figureId}]`); the bytes come through the gateway's figures proxy and are
-/// cached with their licence and attribution, which must be shown with the figure.
-///
-/// A corpus version is a frozen snapshot, so a cached figure never goes stale and is served without asking the
-/// network again, also after an app restart. After every successful pull the sync engine calls [prefetchMissing],
-/// so the figures of advice received while online are there when the phone is offline later.
+/// Cached guideline figures (with licence and attribution); prefetched after each pull so they work offline.
 class FigureRepository {
   FigureRepository(this._db, this._api, this._auth, {DateTime Function()? clock}) : _now = clock ?? DateTime.now;
 
@@ -94,8 +88,7 @@ class FigureRepository {
     return missing;
   }
 
-  /// Fetches up to [limit] figures cited by stored advice and not cached yet. Best effort: stops quietly when the
-  /// network or the session goes, and the next sync carries on. Returns how many were cached.
+  /// Caches up to [limit] missing figures; best effort, returns how many were cached.
   Future<int> prefetchMissing(String accessToken, {int limit = 20}) async {
     var cachedCount = 0;
     for (final ref in (await missingReferences()).take(limit)) {

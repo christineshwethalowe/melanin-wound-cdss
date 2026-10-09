@@ -3,10 +3,7 @@ using System.Text.Json.Serialization;
 
 namespace Sync.Common.Contracts;
 
-/// <summary>
-/// C# shape of contracts/wound-event.schema.json (architecture §5).
-/// The JSON Schema is the source of truth; this type must follow it, never the other way round.
-/// </summary>
+/// <summary>C# version of the wound-event schema; the JSON schema is the source of truth.</summary>
 public sealed record WoundEvent(
     string SchemaVersion,
     Guid EventId,
@@ -45,9 +42,7 @@ public sealed record ClinicalAssessment(
     TriState PedalPulses,
     TriState ProtectiveSensation);
 
-/// <summary>
-/// "Unrecorded" must never collapse into "no" (§3). Serialised as present / absent / not_recorded.
-/// </summary>
+/// <summary>Present / absent / not_recorded, so "unrecorded" never turns into "no".</summary>
 [JsonConverter(typeof(JsonStringEnumConverter<TriState>))]
 public enum TriState
 {

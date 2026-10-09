@@ -2,11 +2,7 @@ using System.Diagnostics.Metrics;
 
 namespace Sync.Common.Telemetry;
 
-/// <summary>
-/// The pipeline's own metrics (architecture §13), next to the standard HTTP, database and runtime ones. Prometheus
-/// sees them as e.g. sync_events_pushed_total{result="DUPLICATE"}; the Grafana dashboard is built on these plus
-/// kafka-exporter's consumer lag.
-/// </summary>
+/// <summary>Pipeline metrics for Prometheus and the Grafana dashboard.</summary>
 public static class SyncMetrics
 {
     public const string MeterName = "MelaninWoundCdss";

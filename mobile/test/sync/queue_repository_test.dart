@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:melanin_wound_cdss/features/sync/api/sync_models.dart';
 import 'package:melanin_wound_cdss/features/sync/data/app_database.dart';
@@ -112,7 +114,7 @@ void main() {
 
     final advice = {'mode': 'generated', 'sections': []};
     final page = PullPage([
-      SyncChange(seq: 3, type: 'RECOMMENDATION_READY', assessmentId: e.assessmentId, revision: 1, mode: 'generated', recommendation: advice),
+      SyncChange(seq: 3, type: 'RECOMMENDATION_READY', assessmentId: e.assessmentId, revision: 1, mode: 'generated', recommendationJson: jsonEncode(advice)),
     ], 3, false);
     await queue.applyPullPage(page);
     await queue.applyPullPage(page); // re-sent within the window: harmless
@@ -140,7 +142,7 @@ void main() {
 
   test('advice for another phone\'s assessment (same facility) is kept for the ward view', () async {
     await queue.applyPullPage(PullPage([
-      const SyncChange(seq: 9, type: 'RECOMMENDATION_READY', assessmentId: 'other-assessment', revision: 1, mode: 'extractive', recommendation: {'mode': 'extractive'}),
+      const SyncChange(seq: 9, type: 'RECOMMENDATION_READY', assessmentId: 'other-assessment', revision: 1, mode: 'extractive', recommendationJson: '{"mode":"extractive"}'),
     ], 9, false));
     expect(await queue.recommendationFor('other-assessment', 1), isNotNull);
     expect(await queue.cursor(), 9);
@@ -155,9 +157,39 @@ void main() {
     expect(await queue.tryAcquireSyncLease(const Duration(minutes: 3)), isTrue);
   });
 
+  test('a run renews and releases only its own sync lease', () async {
+    expect(await queue.tryAcquireSyncLease(const Duration(minutes: 3), owner: 'a'), isTrue);
+    now = now.add(const Duration(minutes: 2));
+    expect(await queue.renewSyncLease(const Duration(minutes: 3), owner: 'a'), isTrue);
+    now = now.add(const Duration(minutes: 2));
+    expect(await queue.tryAcquireSyncLease(const Duration(minutes: 3), owner: 'b'), isFalse, reason: 'renewed');
+
+    now = now.add(const Duration(minutes: 4)); // a stalls, its lease lapses, b takes it
+    expect(await queue.tryAcquireSyncLease(const Duration(minutes: 3), owner: 'b'), isTrue);
+    expect(await queue.renewSyncLease(const Duration(minutes: 3), owner: 'a'), isFalse);
+    await queue.releaseSyncLease(owner: 'a');
+    expect(await queue.tryAcquireSyncLease(const Duration(minutes: 3), owner: 'c'), isFalse, reason: 'b still holds it');
+    await queue.releaseSyncLease(owner: 'b');
+    expect(await queue.tryAcquireSyncLease(const Duration(minutes: 3), owner: 'c'), isTrue);
+  });
+
   test('the device id is created once and kept', () async {
     final id = await queue.deviceId();
     expect(id, startsWith('dev-'));
     expect(await queue.deviceId(), id);
+  });
+
+  test('screens see a burst of queue writes as a few updates, ending on the final state (§13 frame budget)', () async {
+    final seen = <int>[];
+    final sub = queue.watchCounts().listen((c) => seen.add(c.total));
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    for (var i = 0; i < 40; i++) {
+      await queue.enqueue(sampleEvent());
+    }
+    await Future<void>.delayed(QueueRepository.uiRefresh * 3);
+    await sub.cancel();
+    expect(seen.first, 0);
+    expect(seen.last, 40, reason: 'the last change is always shown');
+    expect(seen.length, lessThan(8), reason: '40 writes, not 40 rebuilds: $seen');
   });
 }

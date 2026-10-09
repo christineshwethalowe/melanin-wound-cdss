@@ -3,18 +3,14 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace IdentityService.Endpoints;
 
-/// <summary>
-/// Basic OpenID Connect metadata (ADR 0003): enough for any resource server to find the issuer and the
-/// public signing keys and validate tokens locally. Login itself stays the §7.3 API, not an OIDC flow.
-/// </summary>
+/// <summary>Minimal OpenID Connect metadata so other services can find the issuer and public keys.</summary>
 public static class DiscoveryEndpoints
 {
     public static IEndpointRouteBuilder MapDiscoveryEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapGet("/.well-known/openid-configuration", (HttpRequest request, JwtOptions jwt) =>
         {
-            // URLs follow the address the caller used, so the same document works inside Docker and behind
-            // the API gateway (which sends X-Forwarded-* headers).
+            // Build URLs from the caller's address so this works both inside Docker and behind the gateway.
             var baseUrl = $"{request.Scheme}://{request.Host}{request.PathBase}";
             return Results.Ok(new Dictionary<string, object>
             {

@@ -1,3 +1,2 @@
-// Offline guideline ingestion pipeline (Phase A, steps A1–A9): owned by Member 3 (IT23294202).
-// Placeholder so the solution builds. Steps go in Steps/.
+// Guideline ingestion pipeline (Member 3, IT23294202): placeholder so the solution builds.
 Console.WriteLine("Ingestion pipeline: not implemented yet.");

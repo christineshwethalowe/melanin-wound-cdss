@@ -4,10 +4,7 @@ using Sync.Common.Contracts;
 
 namespace SyncGateway.Validation;
 
-/// <summary>
-/// Checks each incoming event against contracts/wound-event.schema.json (copied next to the binary at
-/// build time) and the 16 KB cap. The same schema file is used by the Flutter app and CI (architecture §5).
-/// </summary>
+/// <summary>Validates incoming events against the shared wound-event schema and the 16 KB limit.</summary>
 public sealed class WoundEventValidator
 {
     private readonly JsonSchema _schema;

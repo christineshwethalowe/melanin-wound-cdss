@@ -1,6 +1,4 @@
-/// Build-time settings. The dashboard talks only to the API gateway (ADR 0004, 0005), never to a service directly.
-///
-/// `flutter run -d chrome --web-port 3001 --dart-define=API_BASE_URL=http://localhost:8080`
+/// Build-time settings; e.g. --dart-define=API_BASE_URL=http://localhost:8080.
 abstract final class AppConfig {
   static const apiBaseUrl = String.fromEnvironment('API_BASE_URL', defaultValue: 'http://localhost:8080');
 

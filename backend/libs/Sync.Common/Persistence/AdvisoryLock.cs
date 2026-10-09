@@ -2,11 +2,7 @@ using Npgsql;
 
 namespace Sync.Common.Persistence;
 
-/// <summary>
-/// Transaction-scoped lock on an assessment (architecture §9.3). Always take this before any
-/// row lock on wound_assessment, patient or recommendation, never after, to avoid deadlocks.
-/// Released automatically on commit or rollback.
-/// </summary>
+/// <summary>Per-assessment transaction lock; always take it before any row locks to avoid deadlocks.</summary>
 public static class AdvisoryLock
 {
     public static async Task AcquireForAssessmentAsync(

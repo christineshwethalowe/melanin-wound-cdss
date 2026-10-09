@@ -6,8 +6,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../api/sync_api.dart';
 import '../api/sync_models.dart';
 
-/// Where secrets live: the refresh token and the database key (§6, §12). On the phone this is the Android Keystore;
-/// tests use [MemorySecretStore].
+/// Where secrets live: Android Keystore on the phone, [MemorySecretStore] in tests.
 abstract class SecretStore {
   Future<String?> read(String key);
   Future<void> write(String key, String value);
@@ -56,8 +55,7 @@ abstract final class DatabaseKeyStore {
   }
 }
 
-/// No usable session: the clinician has to sign in. The offline queue is untouched (§7.3: capture never needs a
-/// live token, only the sync step does).
+/// No usable session, so the clinician must sign in; the offline queue is untouched.
 class NeedsSignIn implements Exception {
   NeedsSignIn(this.reason);
 
@@ -77,8 +75,7 @@ class Clinician {
   final String facilityId;
 }
 
-/// Login, refresh and logout for the device (§7.3). The access token stays in memory only; the rotating refresh
-/// token is kept in the keystore and never in the database (§6: "Keep tokens out of Drift").
+/// Device login session: access token in memory, refresh token in the keystore, never in the database.
 class AuthSession {
   AuthSession(this._api, this._secrets, {DateTime Function()? clock}) : _now = clock ?? DateTime.now;
 
@@ -107,8 +104,7 @@ class AuthSession {
     return await _store(tokens, username);
   }
 
-  /// A token valid for at least [refreshMargin]; refreshes when needed. Throws [NeedsSignIn] when there is no
-  /// session or the server no longer accepts it.
+  /// Returns a token valid for at least [refreshMargin], refreshing if needed; throws [NeedsSignIn] otherwise.
   Future<String> validAccessToken() async {
     final token = _accessToken;
     if (token != null && _expiresAt!.isAfter(_now().add(refreshMargin))) return token;
@@ -152,8 +148,7 @@ class AuthSession {
     await _secrets.delete(_refreshKey);
   }
 
-  /// The rotated refresh token is written to the keystore before the new access token is used: the old one is
-  /// already revoked server-side, so losing the new one would force a sign-in.
+  /// Save the rotated refresh token before using the new access token, since the old one is already revoked.
   Future<Clinician> _store(TokenPair tokens, String username) async {
     await _secrets.write(_refreshKey, tokens.refreshToken);
     _accessToken = tokens.accessToken;

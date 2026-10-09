@@ -1,11 +1,4 @@
--- Duplicate ablation (architecture §13, plan phase 10): "a run with the constraint and inbox switched off ... showing
--- what duplication looks like without the mechanism".
---
--- Dropping the real unique constraints would corrupt the clinical record, so the ablation writes shadow rows instead.
--- With Ablation__Enabled=true the gateway stops answering DUPLICATE (resends reach Kafka again), the persister writes
--- every message it receives here (no unique constraint), and the orchestrator skips its inbox and writes every
--- recommendation it would store here. The real tables keep their protections; these tables show what a store without
--- them would hold. Evaluation only: off in normal operation.
+-- Ablation shadow tables with no unique constraints, to show duplication without touching the real tables.
 CREATE SCHEMA IF NOT EXISTS ablation;
 
 CREATE TABLE ablation.wound_assessment (

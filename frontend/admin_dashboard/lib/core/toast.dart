@@ -7,8 +7,7 @@ import 'messages.dart';
 
 enum ToastKind { success, error, info }
 
-/// A short message in the top-right corner, above any open dialog (snackbars sit under dialogs). One at a time: a new
-/// toast replaces the current one. Errors stay longer than confirmations, and every toast can be dismissed.
+/// A dismissable top-right toast shown above dialogs, one at a time.
 abstract final class Toast {
   static OverlayEntry? _current;
   static Timer? _timer;
@@ -38,8 +37,7 @@ abstract final class Toast {
 void showSuccess(BuildContext context, String title, {String? message}) =>
     Toast.show(context, title: title, message: message, kind: ToastKind.success);
 
-/// [title] says what failed ("Couldn't unlock n.silva"); the message says why, in plain words. An ended session is
-/// not reported here: the app returns to sign-in and says so there.
+/// [title] says what failed and the message says why; ended sessions are handled on the sign-in screen.
 void showError(BuildContext context, String title, Object error) {
   if (error is NeedsSignIn) return;
   Toast.show(context, title: title, message: describeError(error), kind: ToastKind.error);

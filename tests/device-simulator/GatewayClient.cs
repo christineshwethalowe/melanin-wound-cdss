@@ -13,10 +13,7 @@ public sealed record PushOutcome(HttpStatusCode? Status, IReadOnlyList<(Guid Eve
 
 public sealed record Change(long Seq, string Type, Guid AssessmentId, int Revision);
 
-/// <summary>
-/// The device's side of the sync protocol (§7), through the API gateway: login/refresh (§7.3), the reachability probe
-/// (§6.2), gzip push with per-event results (§7.1) and cursor pull (§7.2). One instance per simulated device.
-/// </summary>
+/// <summary>The device's side of the sync protocol: login, health probe, push and pull.</summary>
 public sealed class GatewayClient(HttpClient http, string deviceId, string username, string password)
 {
     private string? _accessToken;
@@ -27,8 +24,7 @@ public sealed class GatewayClient(HttpClient http, string deviceId, string usern
         for (var attempt = 1; ; attempt++)
         {
             using var response = await http.PostAsJsonAsync("v1/auth/login", new { username, password, deviceId }, ct);
-            // The API gateway rate-limits login per IP (ADR 0004); all simulated phones share this host's IP.
-            // 5xx: the identity service or the network is having a moment; the caller backs off and retries.
+            // Login is rate-limited per IP and all simulated phones share one; on 5xx the caller backs off and retries.
             if (response.StatusCode == HttpStatusCode.TooManyRequests && attempt < 5)
             {
                 await Task.Delay(response.Headers.RetryAfter?.Delta ?? TimeSpan.FromSeconds(10), ct);

@@ -14,9 +14,9 @@ using SyncGateway.Validation;
 using Sync.Common.Telemetry;
 using OpenTelemetry.Trace;
 using OpenTelemetry.Metrics;
+using Sync.Common.Web;
 
-// Sync Gateway (architecture §4): push/pull, patient alias, figure proxy. Stateless; scale by replicas.
-// Tokens come from the identity service (ADR 0003); this service only validates them.
+// Sync Gateway: push/pull, patient alias and figure proxy; it only validates tokens, never issues them.
 var builder = WebApplication.CreateBuilder(args);
 builder.AddSyncTelemetry("sync-gateway")
     .WithTracing(t => t.AddAspNetCoreInstrumentation())
@@ -34,8 +34,7 @@ builder.Services.AddSingleton(new AblationOptions(builder.Configuration.GetValue
 builder.Services.AddSingleton<PushService>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<DeviceRevocationCheck>();
-// The Recommendation Service, for the figures proxy (§10.4) and the REST baseline (§13.1, which calls it inside the
-// request with the same 60 s the orchestrator allows per attempt, but no retries).
+// Recommendation Service client for the figures proxy and the REST baseline (60 s, no retries).
 builder.Services.AddSingleton(RecommendationResponseValidator.FromOutputDirectory());
 builder.Services.AddHttpClient(BaselineEndpoint.RecommendationClient, client =>
 {
@@ -47,12 +46,13 @@ builder.Services.AddSingleton<IProducer<string, byte[]>>(_ => new ProducerBuilde
         deliveryTimeoutMs: 10_000)).Build());
 
 builder.Services.AddRequestDecompression(); // devices send gzip batches (§6.2)
+// Bearer tokens only: the data-protection keys AddAuthentication brings in protect nothing here.
+builder.Services.AddInMemoryDataProtection();
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(o =>
     {
-        // Public keys come from the identity service's JWKS, fetched once and cached; a token with an unknown
-        // kid triggers a refetch (key rotation). No call to the identity service per request.
+        // Public keys come from the identity service's JWKS, cached and refetched on an unknown kid.
         o.MetadataAddress = jwt["MetadataAddress"] ?? "http://localhost:8085/.well-known/openid-configuration";
         o.RequireHttpsMetadata = jwt.GetValue("RequireHttpsMetadata", false);
         o.RefreshInterval = TimeSpan.FromSeconds(30); // retry soon if the identity service was not up yet
@@ -66,8 +66,7 @@ builder.Services
             NameClaimType = ClaimNames.Subject,
             RoleClaimType = ClaimNames.Role,
         };
-        // A valid signature is not enough for a mobile token: its device must not have been revoked (§12).
-        // Admin-dashboard tokens carry no device and skip the check.
+        // Mobile tokens also need a non-revoked device; dashboard tokens have no device and skip this.
         o.Events = new JwtBearerEvents
         {
             OnTokenValidated = async context =>

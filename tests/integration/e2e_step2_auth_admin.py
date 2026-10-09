@@ -1,13 +1,4 @@
-"""
-Build step 2 (architecture §14.1): "a clinician can register, log in, and the login is auditable end to end".
-Covers admin registration, facility scoping, TOTP MFA, unlock, deactivate, the patient display alias and
-the auth audit trail.
-
-Needs the stack up, migrations applied, the API gateway (8080), identity service, Sync Gateway, ingest persister and outbox relay running.
-Creates its own throwaway admins and clinicians with random names, so it can be re-run.
-
-    python tests/integration/e2e_step2_auth_admin.py
-"""
+"""Clinician registration, login, MFA, admin actions and the auth audit trail end to end; safe to re-run."""
 import secrets
 import sys
 import time

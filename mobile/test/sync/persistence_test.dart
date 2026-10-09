@@ -11,8 +11,7 @@ import 'package:melanin_wound_cdss/features/sync/data/tables.dart';
 
 import 'support/fakes.dart';
 
-/// Saves 1,000 events and leases a batch in an isolate that is then killed without closing the database: the app
-/// process dying mid-sync.
+/// Saves 1,000 events and kills the isolate mid-sync to simulate the app dying.
 Future<void> _saveThenDie((String path, String key, SendPort done) args) async {
   final (path, key, done) = args;
   final db = AppDatabase(NativeDatabase(File(path), setup: (raw) => AppDatabase.applyKey(raw, key)));

@@ -1,9 +1,12 @@
 import 'dart:math';
 
+import 'package:uuid/uuid.dart';
+
 import '../api/sync_api.dart';
 import '../auth/auth_session.dart';
 import '../data/app_database.dart';
 import '../data/figure_repository.dart';
+import '../data/patient_repository.dart';
 import '../data/queue_repository.dart';
 import 'backoff.dart';
 
@@ -56,31 +59,21 @@ class _Stop implements Exception {
   final String? detail;
 }
 
-/// The sync engine (architecture §6.2, §7). One call to [sync] is one sync run:
-///
-///   1. single flight: one run at a time in this isolate, and a database lease across isolates;
-///   2. lapsed leases return to pending (a killed app is safe);
-///   3. the access token is refreshed first; with no usable session the run pauses for sign-in, queue untouched;
-///   4. if anything waits to be sent: probe /health (reachability, not just connectivity), then push the oldest
-///      batch (≤ 50 events / 256 KB, gzip) until the queue is empty, applying per-event results;
-///   5. pull every change after the cursor, cursor saved with the changes in one transaction;
-///   6. best effort: cache the guideline figures the received advice cites, so they are there offline (§10.4).
-///
-/// Failures follow §7.1: 401 → refresh and retry once; 413 → split the batch; 429/503, timeout or no answer → rows
-/// back to pending and back off (2 s doubling to 5 min, full jitter, Retry-After honoured). REJECTED rows are final.
-/// Database work runs on Drift's background isolate; this class only waits on it and on the network.
+/// The sync engine: one [sync] call pushes the queue in batches, pulls changes, and backs off on failure without ever throwing.
 class SyncEngine {
   SyncEngine({
     required QueueRepository queue,
     required SyncApi api,
     required AuthSession auth,
     FigureRepository? figures,
+    PatientRepository? patients,
     DateTime Function()? clock,
     Random? random,
   })  : _queue = queue,
         _api = api,
         _auth = auth,
         _figures = figures,
+        _patients = patients,
         _now = clock ?? DateTime.now,
         _backoff = Backoff(random);
 
@@ -88,16 +81,19 @@ class SyncEngine {
   final SyncApi _api;
   final AuthSession _auth;
   final FigureRepository? _figures;
+  final PatientRepository? _patients;
   final DateTime Function() _now;
   final Backoff _backoff;
 
   /// Longer than any run, so a run killed mid-way frees the lease on its own.
   static const syncLease = Duration(minutes: 3);
 
+  /// Names this engine's runs in the database lease, so a run renews and releases only its own.
+  final String _leaseOwner = const Uuid().v4();
+
   Future<SyncReport>? _running;
 
-  /// Runs one sync, or joins the one already running in this isolate. [force] ignores the backoff window
-  /// (pull-to-refresh, "sync now").
+  /// Runs one sync or joins the one in progress; [force] skips the backoff wait.
   Future<SyncReport> sync({bool force = false}) =>
       _running ??= _run(force).whenComplete(() => _running = null);
 
@@ -106,9 +102,16 @@ class SyncEngine {
     if (!force && retryAt != null && retryAt.isAfter(_now())) {
       return SyncReport(SyncOutcome.backingOff, retryAt: retryAt);
     }
-    if (!await _queue.tryAcquireSyncLease(syncLease)) return SyncReport(SyncOutcome.alreadyRunning);
+    if (!await _queue.tryAcquireSyncLease(syncLease, owner: _leaseOwner)) return SyncReport(SyncOutcome.alreadyRunning);
 
     var pushed = 0, accepted = 0, rejected = 0, changes = 0;
+    Future<SyncReport> backOff(SyncOutcome outcome, String detail, [Duration? retryAfter]) async {
+      final at = _now().add(_backoff.next(retryAfter: retryAfter));
+      await _queue.setState(SyncStateKeys.nextAttemptAt, at.toIso8601String());
+      return SyncReport(outcome,
+          pushed: pushed, accepted: accepted, rejected: rejected, changes: changes, retryAt: at, detail: detail);
+    }
+
     try {
       await _queue.releaseExpiredLeases();
       var token = await _auth.validAccessToken();
@@ -117,6 +120,7 @@ class SyncEngine {
       if (await _queue.hasWorkToSend()) {
         if (!await _api.health()) throw _Stop(SyncOutcome.offline, null, 'gateway unreachable');
         while (true) {
+          await _keepLease();
           final batch = await _queue.leaseBatch();
           if (batch.isEmpty) break;
           final result = await _push(batch, token, deviceId);
@@ -138,6 +142,10 @@ class SyncEngine {
       try {
         figures = await _figures?.prefetchMissing(token) ?? 0;
       } catch (_) {}
+      // Also best effort: patient labels reach the server's record; unsent ones go on the next sync.
+      try {
+        await _patients?.pushAliases(token);
+      } catch (_) {}
       return SyncReport(SyncOutcome.success,
           pushed: pushed, accepted: accepted, rejected: rejected, changes: changes, figures: figures);
     } on NeedsSignIn catch (e) {
@@ -148,22 +156,47 @@ class SyncEngine {
         return SyncReport(SyncOutcome.needsSignIn,
             pushed: pushed, accepted: accepted, rejected: rejected, changes: changes, detail: stop.detail);
       }
-      final at = _now().add(_backoff.next(retryAfter: stop.retryAfter));
-      await _queue.setState(SyncStateKeys.nextAttemptAt, at.toIso8601String());
-      return SyncReport(stop.outcome,
-          pushed: pushed, accepted: accepted, rejected: rejected, changes: changes, retryAt: at, detail: stop.detail);
+      if (stop.outcome == SyncOutcome.alreadyRunning) {
+        return SyncReport(SyncOutcome.alreadyRunning,
+            pushed: pushed, accepted: accepted, rejected: rejected, changes: changes, detail: stop.detail);
+      }
+      return backOff(stop.outcome, stop.detail ?? '', stop.retryAfter);
     } on TransportException catch (e) {
-      final at = _now().add(_backoff.next());
-      await _queue.setState(SyncStateKeys.nextAttemptAt, at.toIso8601String());
-      return SyncReport(SyncOutcome.offline,
-          pushed: pushed, accepted: accepted, rejected: rejected, changes: changes, retryAt: at, detail: e.message);
+      return backOff(SyncOutcome.offline, e.message);
+    } on ApiException catch (e) {
+      // An error answer outside the push and pull handling, e.g. the token refresh answered 503 or 500.
+      final busy = e.status == 429 || e.status == 503;
+      return backOff(busy ? SyncOutcome.serverBusy : SyncOutcome.offline,
+          'HTTP ${e.status}${e.code == null ? '' : ' ${e.code}'}', e.retryAfter);
+    } catch (e) {
+      // A malformed answer (a Wi-Fi login page instead of JSON) or anything unforeseen: back off and try again.
+      return backOff(SyncOutcome.offline, 'unexpected: $e');
     } finally {
-      await _queue.releaseSyncLease();
+      await _queue.releaseSyncLease(owner: _leaseOwner);
+    }
+  }
+
+  /// Renews the database lease before each batch and page. If it lapsed and another run took it, this run stops.
+  Future<void> _keepLease() async {
+    if (!await _queue.renewSyncLease(syncLease, owner: _leaseOwner)) {
+      throw _Stop(SyncOutcome.alreadyRunning, null, 'lease taken over by another run');
     }
   }
 
   /// Pushes one leased batch. Every path leaves each row accepted, rejected or back to pending.
   Future<({String token, int pushed, int accepted, int rejected})> _push(
+      List<QueuedEvent> batch, String token, String deviceId,
+      {bool refreshed = false}) async {
+    try {
+      return await _pushLeased(batch, token, deviceId, refreshed: refreshed);
+    } catch (_) {
+      // Release any still-leased rows back to pending right away instead of waiting for the lease to lapse.
+      await _queue.release([for (final r in batch) r.eventId], 'sync stopped');
+      rethrow;
+    }
+  }
+
+  Future<({String token, int pushed, int accepted, int rejected})> _pushLeased(
       List<QueuedEvent> batch, String token, String deviceId,
       {bool refreshed = false}) async {
     final ids = [for (final r in batch) r.eventId];
@@ -190,19 +223,13 @@ class SyncEngine {
         );
       case 401 when !refreshed:
         // §7.1: refresh the token, retry the batch (still leased).
-        final String fresh;
-        try {
-          fresh = await _auth.refresh();
-        } on NeedsSignIn {
-          await _queue.release(ids, 'session ended');
-          rethrow;
-        }
-        return _push(batch, fresh, deviceId, refreshed: true);
+        final fresh = await _auth.refresh();
+        return _pushLeased(batch, fresh, deviceId, refreshed: true);
       case 413 when batch.length > 1:
         // §7.1: split the batch. The second half goes back to pending and follows in the next batch.
         final half = batch.length ~/ 2;
         await _queue.release(ids.sublist(half), 'split after 413');
-        return _push(batch.sublist(0, half), token, deviceId, refreshed: refreshed);
+        return _pushLeased(batch.sublist(0, half), token, deviceId, refreshed: refreshed);
       case 413:
         await _queue.reject(ids, 'PAYLOAD_TOO_LARGE');
         return (token: token, pushed: 1, accepted: 0, rejected: 1);
@@ -228,6 +255,7 @@ class SyncEngine {
     var count = 0;
     var refreshed = false;
     while (true) {
+      await _keepLease();
       try {
         final page = await _api.pull(token, await _queue.cursor());
         await _queue.applyPullPage(page);

@@ -1,12 +1,4 @@
-// Recommendation Service stub (architecture §13.1, build step 7).
-// Stands in for Member 3's service so the orchestrator and the REST baseline can be benchmarked
-// against the same, controllable dependency. Behaviour is set with environment variables:
-//   STUB_DELAY_MS   extra latency per call (default 0)
-//   STUB_FAIL_MODE  none | 503 | 422 | 409 | uncited (default none)
-//                   uncited answers 200 with a section whose citation tag does not resolve (§10.1 ValidateResponse)
-// It also serves GET /v1/figures/{corpusVersion}/{figureId} (§10.4) for figures F1-F3: a 1×1 PNG with licence and
-// attribution headers and an ETag, so the gateway's figures proxy can be tested before Member 3's service exists.
-// The answer is a fixed, contract-valid shape (rag-response 1.0); its text is placeholder, not clinical advice.
+// RAG stub for benchmarks: STUB_DELAY_MS adds latency, STUB_FAIL_MODE = none|503|422|409|uncited; also serves dummy figures F1-F3.
 var builder = WebApplication.CreateBuilder(args);
 var app = builder.Build();
 

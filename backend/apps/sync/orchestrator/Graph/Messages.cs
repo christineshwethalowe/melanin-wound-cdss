@@ -3,15 +3,7 @@ using Sync.Common.Contracts;
 
 namespace Orchestrator.Graph;
 
-// Typed messages passed along the workflow edges (architecture §10.1):
-//
-//   OrchestrationJob ─► InboxCheck ─► SupersedeCheck ─► BuildContext ─► CallRag ─► ValidateResponse ─► PersistResult
-//                           │               │                │              │               │                │
-//                           └ processed     └ superseded     └ not found    └ deferred /    └ invalid        └ stored
-//                                                                             contract error
-//
-// Every run ends with exactly one OrchestrationOutcome, yielded by whichever executor ended it. The consumer
-// uses it to decide whether to commit the Kafka offset or route the message to a retry topic / the DLQ.
+// Messages for the workflow: InboxCheck → SupersedeCheck → BuildContext → CallRag → ValidateResponse → PersistResult, ending in one outcome.
 
 /// <summary>Workflow input: the persisted event plus the trace it belongs to (from the Kafka headers).</summary>
 public sealed record OrchestrationJob(PersistedEvent Event, string? TraceId);

@@ -10,9 +10,7 @@ abstract final class AppColors {
   static const white = Color(0xFFFFFFFF);
 }
 
-/// The dashboard's look, in one place: a midnight-blue frame, white work surfaces, dark-blue actions and teal accents.
-/// One light design whatever the system setting, so the brand colours always read the same.
-/// Text only, no icons: the project's own icon set is added later.
+/// The dashboard's single light theme: midnight-blue frame, white surfaces, blue actions and teal accents.
 abstract final class AppTheme {
   static ThemeData light() => _build(
     ColorScheme.fromSeed(seedColor: AppColors.darkBlue).copyWith(

@@ -95,4 +95,19 @@ void main() {
         expect(s.status.value.last!.outcome, SyncOutcome.success);
         s.dispose();
       }));
+
+  test('a run that throws shows as offline and never escapes a trigger', () => fakeAsync((async) {
+        final s = build(async);
+        next = () => throw StateError('database closed');
+        SyncReport? report;
+        s.syncNow().then((r) => report = r);
+        async.flushMicrotasks();
+        expect(report!.outcome, SyncOutcome.offline);
+        expect(s.status.value.running, isFalse);
+        expect(s.status.value.last!.detail, contains('database closed'));
+        s.onSaved();
+        async.elapse(SyncScheduler.saveDebounce); // from a timer: would be an unhandled error if it threw
+        expect(calls, [true, false]);
+        s.dispose();
+      }));
 }

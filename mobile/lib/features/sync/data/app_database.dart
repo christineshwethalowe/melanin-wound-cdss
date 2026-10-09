@@ -17,10 +17,12 @@ abstract final class SyncStateKeys {
 
   /// Single flight across isolates (§6.2): the time until which a sync run holds the lease.
   static const syncLeaseUntil = 'sync_lease_until';
+
+  /// Which run holds the lease, so a run only renews or releases its own.
+  static const syncLeaseOwner = 'sync_lease_owner';
 }
 
-/// The device database (§6), encrypted at rest with SQLCipher (§12): the key is 32 random bytes held in the platform
-/// keystore (see DatabaseKeyStore), never on disk next to the file.
+/// The SQLCipher-encrypted device database; its key lives in the platform keystore.
 @DriftDatabase(tables: [
   WoundEventQueue,
   AssessmentLocal,
@@ -28,12 +30,12 @@ abstract final class SyncStateKeys {
   FiguresLocal,
   SyncState,
   AuthLocal,
+  PatientLocal,
 ])
 class AppDatabase extends _$AppDatabase {
   AppDatabase(super.executor);
 
-  /// Opens (or creates) the encrypted database file. All database work runs on a background isolate
-  /// (createInBackground), so queries never block the UI thread (§6.2: the 200 ms frame budget).
+  /// Opens or creates the encrypted database on a background isolate so the UI never blocks.
   factory AppDatabase.encrypted(File file, String hexKey) => AppDatabase(
         NativeDatabase.createInBackground(file, setup: (raw) => applyKey(raw, hexKey)),
       );
@@ -41,15 +43,24 @@ class AppDatabase extends _$AppDatabase {
   /// For tests: an in-memory database (not encrypted).
   factory AppDatabase.inMemory() => AppDatabase(NativeDatabase.memory());
 
-  /// A raw 256-bit key (no passphrase derivation), then a read to fail fast on a wrong key.
+  /// Use the raw key, read once to fail fast, and set a busy timeout so two connections can share the file.
   static void applyKey(sqlite.Database raw, String hexKey) {
     if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(hexKey)) {
       throw ArgumentError('The database key must be 64 lower-case hex characters (32 bytes).');
     }
     raw.execute("PRAGMA key = \"x'$hexKey'\"");
     raw.execute('SELECT count(*) FROM sqlite_master');
+    raw.execute('PRAGMA busy_timeout = 5000');
   }
 
+  /// 2: patient_local (the Patients tab).
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
+
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+        onUpgrade: (m, from, to) async {
+          if (from < 2) await m.createTable(patientLocal);
+        },
+      );
 }

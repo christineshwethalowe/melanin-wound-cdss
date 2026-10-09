@@ -4,12 +4,7 @@ using Sync.Common.Contracts;
 
 namespace Sync.Common.Recommendations;
 
-/// <summary>
-/// Checks a Recommendation Service answer (architecture §10.1 ValidateResponse): it matches
-/// contracts/rag-response.schema.json, answers the case and revision that were asked, and every section's citation
-/// tags resolve in the citations list. It never re-judges clinical content. Shared by the orchestrator and the
-/// REST baseline so both do the same work (§13.1).
-/// </summary>
+/// <summary>Checks a Recommendation Service answer against the schema, the request and its citations.</summary>
 public sealed class RecommendationResponseValidator(JsonSchema schema)
 {
     private static readonly EvaluationOptions Options = new() { OutputFormat = OutputFormat.List };

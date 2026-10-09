@@ -3,11 +3,7 @@ using Sync.Common.Telemetry;
 
 namespace IdentityService.Auth;
 
-/// <summary>
-/// Auth health (architecture §13 metric table: "login failure rate, lockouts per day, average session lifetime").
-/// Prometheus sees auth_events_total{action, success, reason}, auth_sessions_active{client},
-/// auth_session_lifetime_seconds{client, state} and auth_sessions_ended{client, how}.
-/// </summary>
+/// <summary>Auth health metrics: login failures, lockouts and session lifetimes for Prometheus.</summary>
 public static class AuthMetrics
 {
     private static readonly Meter Meter = new(SyncMetrics.MeterName);
@@ -46,10 +42,7 @@ public static class AuthMetrics
             "{session}", "Sessions that ended in the last 24 h: logout or revocation, or refresh token expired unused");
     }
 
-    /// <summary>
-    /// Creates the series the dashboard reads at 0. Prometheus' increase() ignores the first value of a new series,
-    /// so without this the first lockout after a restart would never show in "lockouts per day".
-    /// </summary>
+    /// <summary>Starts each series at 0 so Prometheus' increase() doesn't miss the first event after a restart.</summary>
     public static void InitializeSeries()
     {
         foreach (var (action, success, reason) in new (string, bool, string?)[]

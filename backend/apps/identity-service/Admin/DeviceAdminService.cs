@@ -6,10 +6,7 @@ namespace IdentityService.Admin;
 public sealed record DeviceSummary(string DeviceId, DateTime RegisteredAt, DateTime? RevokedAt, int ActiveSessions,
     DateTime? LastSeenAt, string? LastUsername);
 
-/// <summary>
-/// Device management for facility admins (architecture §12: "devices are registered and can be revoked").
-/// Scoped to the admin's own facility and audited with the admin as the actor, like <see cref="ClinicianAdminService"/>.
-/// </summary>
+/// <summary>Device management for facility admins, scoped to their facility and audited.</summary>
 public sealed class DeviceAdminService(NpgsqlDataSource db)
 {
     public async Task<IReadOnlyList<DeviceSummary>> ListAsync(string facilityId, CancellationToken ct)
@@ -39,11 +36,7 @@ public sealed class DeviceAdminService(NpgsqlDataSource db)
         return list;
     }
 
-    /// <summary>
-    /// For a lost or stolen phone: the device can no longer log in, and every session on it ends, so its refresh
-    /// tokens stop working at once. Its access tokens are refused by the Sync Gateway's revocation check.
-    /// Revocation is permanent; a recovered phone is re-enrolled under a new device id.
-    /// </summary>
+    /// <summary>Revokes a lost or stolen phone: blocks login and ends all its sessions, permanently.</summary>
     public async Task<string?> RevokeAsync(Guid actorId, string facilityId, string deviceId, CancellationToken ct)
     {
         await using var conn = await db.OpenConnectionAsync(ct);

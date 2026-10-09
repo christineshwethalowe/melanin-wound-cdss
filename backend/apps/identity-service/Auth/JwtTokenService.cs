@@ -8,10 +8,7 @@ using Sync.Common.Auth;
 
 namespace IdentityService.Auth;
 
-/// <summary>
-/// Who a session is issued to (ADR 0005). Mobile sessions are bound to a registered device; admin-dashboard
-/// sessions run in a browser, have no device, and are for role admin only.
-/// </summary>
+/// <summary>Who a session is for: mobile sessions are tied to a device, dashboard sessions are admin-only with no device.</summary>
 public static class Clients
 {
     public const string Mobile = "mobile";
@@ -27,27 +24,17 @@ public sealed class JwtOptions
     public int AccessTokenMinutes { get; set; } = 15;
     public int RefreshTokenDays { get; set; } = 30;
 
-    /// <summary>
-    /// Audience of admin-dashboard tokens. The Sync Gateway accepts only <see cref="Audience"/>, so a dashboard
-    /// token can never push, pull or touch patient records.
-    /// </summary>
+    /// <summary>Audience for dashboard tokens; the Sync Gateway rejects it, so they can't touch patient data.</summary>
     public string DashboardAudience { get; set; } = "melanin-wound-cdss-admin";
 
     /// <summary>A browser session is shorter-lived than a device's.</summary>
     public int DashboardRefreshTokenHours { get; set; } = 12;
 
-    /// <summary>
-    /// RSA private key (PKCS#8 or PKCS#1 PEM) used to sign access tokens. Set Jwt__SigningKeyPem outside local dev.
-    /// When empty, a new key is generated at start-up: fine for a laptop, but every restart invalidates
-    /// access tokens (devices simply refresh) and replicas would not share a key.
-    /// </summary>
+    /// <summary>PEM private key for signing tokens; if empty a new one is generated at start-up (fine for local dev only).</summary>
     public string SigningKeyPem { get; set; } = "";
 }
 
-/// <summary>
-/// The RS256 signing key (ADR 0003). Only the identity service holds the private half; resource servers
-/// fetch the public half from /.well-known/jwks.json and validate tokens locally.
-/// </summary>
+/// <summary>RS256 signing key; only this service holds the private half, others fetch the public half from JWKS.</summary>
 public sealed class SigningKey
 {
     public RsaSecurityKey PrivateKey { get; }
@@ -80,10 +67,7 @@ public sealed class SigningKey
         PrivateKey = new RsaSecurityKey(rsa) { KeyId = kid };
     }
 
-    /// <summary>
-    /// Undoes what env files and secret stores do to a multi-line PEM: literal <c>\n</c> escapes, surrounding
-    /// quotes, newlines collapsed into spaces, base64 wrapping of the whole file, or a path given instead of contents.
-    /// </summary>
+    /// <summary>Cleans up a PEM mangled by env files (escaped newlines, quotes, base64, or a file path).</summary>
     internal static string NormalizePem(string value)
     {
         var v = value.Trim().Trim('"', '\'').Trim();

@@ -7,11 +7,7 @@ namespace Housekeeping;
 public sealed record CycleResult(bool Ran, int OutboxDeleted, int ChangeLogArchived, int InboxDeleted,
     TimeSpan? InboxRetention, IReadOnlyList<HeldBackFacility> HeldBack);
 
-/// <summary>
-/// Housekeeping (architecture §9.4): outbox rows are "short-lived by design", change-log rows are "kept until every
-/// device cursor has passed it, then eligible for archival", and inbox rows are needed only while Kafka can still
-/// redeliver the message. One cycle every <see cref="HousekeepingOptions.Interval"/>, in batches.
-/// </summary>
+/// <summary>Periodically cleans up outbox rows, archives old change-log rows and trims the inbox, in batches.</summary>
 public sealed class HousekeepingWorker(
     NpgsqlDataSource db, KafkaRetentionProbe kafka, IOptions<HousekeepingOptions> options,
     ILogger<HousekeepingWorker> logger) : BackgroundService

@@ -3,12 +3,7 @@ using Npgsql;
 
 namespace SyncGateway.Auth;
 
-/// <summary>
-/// Refuses access tokens of a revoked device (architecture §12). Tokens are validated offline against the JWKS, so
-/// without this a revoked phone could keep pushing and pulling until its access token expired (15 minutes).
-/// The answer per device is cached for <see cref="CacheFor"/>, so a revocation takes effect within that time while
-/// the database sees at most one lookup per device per interval, not one per request.
-/// </summary>
+/// <summary>Blocks tokens from revoked devices, with a short per-device cache to spare the database.</summary>
 public sealed class DeviceRevocationCheck(NpgsqlDataSource db, TimeProvider clock)
 {
     public static readonly TimeSpan CacheFor = TimeSpan.FromSeconds(30);

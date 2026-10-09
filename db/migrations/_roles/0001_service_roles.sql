@@ -1,10 +1,4 @@
--- One database login per service (architecture §9.4, §12, plan phase 9). Applied right after _bootstrap, so every
--- later migration can grant to these roles in the same file that creates a table.
---
--- No passwords here: migration files are committed. The db-migrator sets each password from the environment
--- (ServiceRoles__<role>), and a role without one cannot log in at all. Roles are cluster-wide, hence IF NOT EXISTS.
--- Privileges are granted in grants/0001, after every table exists. The table owner (the migrator's login) is used
--- by nothing but the migrator.
+-- One login per service; passwords are set from env vars by the migrator, and grants come later in grants/.
 DO $$
 DECLARE
     r text;

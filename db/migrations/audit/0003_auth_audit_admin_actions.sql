@@ -1,5 +1,4 @@
--- Clinician management and MFA events join the auth audit trail (build step 2: "the login is auditable
--- end to end"). actor_clinician_id records who performed an action on someone else's account (an admin).
+-- Adds clinician-management and MFA events to the auth audit, with the acting admin recorded.
 ALTER TABLE audit.auth_audit DROP CONSTRAINT auth_audit_action_check;
 ALTER TABLE audit.auth_audit ADD CONSTRAINT auth_audit_action_check CHECK (action IN (
     'LOGIN', 'REFRESH', 'LOGOUT', 'LOCKOUT',

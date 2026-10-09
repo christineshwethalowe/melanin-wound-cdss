@@ -5,10 +5,7 @@ using Sync.Common.Auth;
 
 namespace IdentityService.Endpoints;
 
-/// <summary>
-/// Facility admin endpoints (role "admin"). Everything is scoped to the admin's own facility, taken from the
-/// token — an admin can never see or change clinicians or devices of another facility.
-/// </summary>
+/// <summary>Facility admin endpoints, always scoped to the admin's own facility from the token.</summary>
 public static class AdminEndpoints
 {
     public const string AdminPolicy = "admin";

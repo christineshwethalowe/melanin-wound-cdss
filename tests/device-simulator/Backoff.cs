@@ -1,9 +1,6 @@
 namespace DeviceSimulator;
 
-/// <summary>
-/// Retry delay from §6.2: start at 2 s, double up to 5 min, full jitter, reset on success. A Retry-After from the
-/// server (429, 503) is honoured when it asks for longer.
-/// </summary>
+/// <summary>Retry delay: 2 s doubling to 5 min with full jitter, reset on success; longer Retry-After wins.</summary>
 public sealed class Backoff(Random random)
 {
     public static readonly TimeSpan Initial = TimeSpan.FromSeconds(2);

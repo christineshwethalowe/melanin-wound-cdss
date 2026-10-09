@@ -10,15 +10,7 @@ using System.Diagnostics;
 
 namespace IngestPersister.Consumers;
 
-/// <summary>
-/// Reads wound-events (group "persister"), runs one <see cref="PersisterTransaction"/> per message and
-/// commits the Kafka offset only after the database commit (architecture §9.4).
-///
-/// - A message that cannot be parsed, or that conflicts with a stored revision, goes to the DLQ and its
-///   offset is committed, so one bad message never stalls the partition.
-/// - A database failure does not commit the offset: the consumer seeks back and the message is redelivered.
-///   (Plan phase 7 moves transient failures onto the retry topics instead.)
-/// </summary>
+/// <summary>Persists each wound event and commits the Kafka offset only after the DB commit; bad messages go to the DLQ.</summary>
 public sealed class WoundEventsConsumer(
     PersisterTransaction persister, IProducer<string, byte[]> producer, IConfiguration config, ILogger<WoundEventsConsumer> logger)
     : BackgroundService

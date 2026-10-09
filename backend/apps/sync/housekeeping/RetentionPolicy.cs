@@ -3,13 +3,7 @@ namespace Housekeeping;
 /// <summary>Pure retention decisions, kept apart from the SQL so they can be unit-tested.</summary>
 public static class RetentionPolicy
 {
-    /// <summary>
-    /// How old an inbox row must be before it is deleted, or null to keep every row this cycle.
-    /// </summary>
-    /// <param name="topicRetentions">
-    /// retention.ms of each topic the inbox consumers read, as Kafka reports it; null when Kafka could not be asked.
-    /// A negative value means "kept forever" (Kafka's -1).
-    /// </param>
+    /// <summary>How old an inbox row must be before deletion, or null to keep everything this cycle.</summary> <param name="topicRetentions">Each topic's retention.ms (-1 = forever); null if Kafka couldn't be reached.</param>
     public static TimeSpan? InboxRetention(HousekeepingOptions options, IReadOnlyCollection<long>? topicRetentions)
     {
         // Without Kafka's answer the redelivery window is unknown: keep everything rather than guess.

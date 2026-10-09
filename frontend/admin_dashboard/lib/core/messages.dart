@@ -2,9 +2,7 @@ import 'admin_api.dart';
 import 'auth_session.dart';
 import 'models.dart';
 
-/// What went wrong, in words an admin can act on: never a status number or a reason code. Known codes from the
-/// backend (contracts/auth.schema.json and the /v1/admin answers) get their own sentence; anything else falls back on
-/// what the kind of answer means.
+/// Turns backend errors into plain sentences an admin can act on.
 String describeError(Object error) => switch (error) {
   ApiException(code: final code?) when _codes.containsKey(code) => _codes[code]!,
   ApiException(status: 400) => 'Some of the details are not valid. Check the form and try again.',

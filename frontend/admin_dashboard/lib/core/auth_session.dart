@@ -26,9 +26,7 @@ class Admin {
   final String facilityId;
 }
 
-/// Login, refresh and logout for the dashboard (ADR 0005). Mirrors the mobile AuthSession: the access token stays in
-/// memory, the rotating refresh token in [TokenStore]. Listeners hear when the admin signs in or out, including a
-/// session the server stopped accepting.
+/// Dashboard login session: access token in memory, refresh token in [TokenStore], and listeners for sign-in/out.
 class AuthSession extends ChangeNotifier {
   AuthSession(this.api, this._store, {DateTime Function()? clock}) : _now = clock ?? DateTime.now;
 
@@ -51,16 +49,14 @@ class AuthSession extends ChangeNotifier {
   Admin? get admin => _admin;
   bool get signedIn => _admin != null;
 
-  /// True once after the server stopped accepting a signed-in session (expired, revoked, deactivated), so the
-  /// sign-in screen can say why the admin is back there. A deliberate sign-out does not count.
+  /// True once after the server ended the session, so the sign-in screen can explain why.
   bool takeSessionEndedNotice() {
     final ended = _ended;
     _ended = false;
     return ended;
   }
 
-  /// After a page reload only the refresh token is left; trade it for a new access token. False when there is no
-  /// session to resume.
+  /// After a reload, swap the refresh token for a new access token; false if there's no session.
   Future<bool> restore() async {
     if (_store.read(_refreshKey) == null) return false;
     try {
@@ -78,8 +74,7 @@ class AuthSession extends ChangeNotifier {
     return _accept(tokens);
   }
 
-  /// Runs an admin call with a valid access token. A 401 means the token was refused (expired early, key rotated):
-  /// refresh once and retry; if refreshing fails too, the admin is signed out and [NeedsSignIn] is thrown.
+  /// Runs an admin call, refreshing once on a 401; throws [NeedsSignIn] if that fails too.
   Future<T> authorized<T>(Future<T> Function(String accessToken) call) async {
     try {
       return await call(await _validAccessToken());
@@ -89,8 +84,7 @@ class AuthSession extends ChangeNotifier {
     }
   }
 
-  /// Rotates both tokens. Concurrent callers share one request: the old refresh token stops working the moment the
-  /// first rotation succeeds, so a second request with it would sign the admin out.
+  /// Rotates both tokens, sharing one request between concurrent callers.
   Future<String> refresh() => _refreshing ??= _refresh().whenComplete(() => _refreshing = null);
 
   Future<void> signOut() async {

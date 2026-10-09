@@ -16,9 +16,7 @@ public static class AuthEndpoints
     {
         var auth = group.MapGroup("/auth");
 
-        // 401 codes: INVALID_CREDENTIALS, CREDENTIAL_LOCKED, MFA_REQUIRED (ask for a code), INVALID_TOTP,
-        // DEVICE_NOT_ALLOWED, CLIENT_NOT_ALLOWED (dashboard login by a non-admin). The offline queue on the
-        // device is never affected by any of them.
+        // 401 codes: INVALID_CREDENTIALS, CREDENTIAL_LOCKED, MFA_REQUIRED, INVALID_TOTP, DEVICE_NOT_ALLOWED, CLIENT_NOT_ALLOWED.
         auth.MapPost("/login", async (LoginRequest req, AuthService service, CancellationToken ct) =>
         {
             var client = req.ClientId ?? Clients.Mobile;

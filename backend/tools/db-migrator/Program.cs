@@ -3,11 +3,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using Npgsql;
 
-// Applies db/migrations in order and records each file in sync.schema_migrations (architecture §9.2).
-//   dotnet run --project backend/tools/db-migrator            apply pending migrations
-//   dotnet run --project backend/tools/db-migrator -- --seed  also apply db/seed (local dev only)
-// Service role passwords (plan phase 9) come from the environment, never from a migration file:
-//   ServiceRoles__identity_svc=...  ServiceRoles__gateway_svc=...  (one per role in db/migrations/_roles)
+// Applies db/migrations in order (add -- --seed for dev data); role passwords come from ServiceRoles__<role> env vars.
 
 // _roles runs first so later migrations can grant to the service roles; grants runs last, when every table exists.
 string[] schemaOrder = ["_bootstrap", "_roles", "clinical", "messaging", "audit", "sync", "rag", "baseline", "ablation", "grants"];

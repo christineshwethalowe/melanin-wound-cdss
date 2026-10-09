@@ -7,11 +7,9 @@ using Sync.Common.Auth;
 using Sync.Common.Telemetry;
 using OpenTelemetry.Trace;
 using OpenTelemetry.Metrics;
+using Sync.Common.Web;
 
-// API gateway (ADR 0004): the single public entry point for the app, the admin dashboard and the harness.
-// Routes to the identity service and the Sync Gateway (routes in appsettings.json, ReverseProxy section),
-// and handles the edge concerns once: JWT check, rate limits, CORS, body size. No business logic.
-// YARP forwards traceparent and adds X-Forwarded-For/Proto/Host. Stateless; scale by replicas.
+// API gateway: the single public entry point that routes to identity and sync and handles JWT, rate limits, CORS and body size.
 var builder = WebApplication.CreateBuilder(args);
 builder.AddSyncTelemetry("api-gateway")
     .WithTracing(t => t.AddAspNetCoreInstrumentation())
@@ -22,8 +20,8 @@ var limits = builder.Configuration.GetSection("RateLimits");
 
 builder.Services.AddReverseProxy().LoadFromConfig(builder.Configuration.GetSection("ReverseProxy"));
 
-// Defence in depth: reject missing, expired or forged tokens here. Services still validate them too, and
-// role checks (e.g. admin) stay in the services. Keys come from the identity service's JWKS, cached.
+// Reject bad tokens at the edge too (services still check them); keys come from the identity service's cached JWKS.
+builder.Services.AddInMemoryDataProtection();
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(o =>
@@ -52,9 +50,7 @@ builder.Services.AddCors(o => o.AddPolicy("dashboard", p => p
     .AllowAnyHeader()
     .AllowAnyMethod()));
 
-// "auth": per client IP, on top of the 5-attempt lockout per account (§7.3).
-// "api": per signed-in device (or IP when there is no token), so 100 simulated devices on one host still work.
-// A rejected request gets 429 with Retry-After, which the device already honours (§6.2, §7.1).
+// Rate limits: "auth" per client IP, "api" per signed-in device; rejected requests get 429 with Retry-After.
 builder.Services.AddRateLimiter(o =>
 {
     o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -79,8 +75,7 @@ builder.Services.AddRateLimiter(o =>
 
 var app = builder.Build();
 
-// Kestrel enforces the limit, but YARP would report the failed body read as 400. The device splits a batch
-// on 413 (§7.1), so answer that up front whenever Content-Length already shows the body is too big.
+// Answer 413 up front when Content-Length is too big, since YARP would report it as 400 and the device splits batches on 413.
 var maxBody = app.Configuration.GetValue<long?>("Kestrel:Limits:MaxRequestBodySize");
 app.Use((context, next) =>
 {

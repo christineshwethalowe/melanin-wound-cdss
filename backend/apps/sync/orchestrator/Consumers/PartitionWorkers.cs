@@ -5,17 +5,7 @@ using Sync.Common.Kafka;
 
 namespace Orchestrator.Consumers;
 
-/// <summary>
-/// "Concurrency per consumer" (architecture §4): messages from different partitions are handled in parallel (up to
-/// <c>maxConcurrency</c> at once), messages within one partition strictly one after another. Keys are woundIds, so a
-/// wound's revisions stay in order (§8.1) while different wounds overlap — a slow Recommendation Service call no longer
-/// holds up every other wound.
-///
-/// Offsets keep the at-least-once rule (§9.4, §11): a worker records an offset as done only after its message's outcome
-/// is durable, and only the consume thread commits (the Kafka client is not called from workers). Because a partition
-/// is processed in order, committing its last done offset never skips unfinished work. A partition with too much queued
-/// work is paused until it drains, so memory stays bounded.
-/// </summary>
+/// <summary>Runs partitions in parallel but each partition in order, committing offsets only after work is durable.</summary>
 public sealed class PartitionWorkers(
     Func<ConsumeResult<string, byte[]>, CancellationToken, Task> handle, int maxConcurrency, int maxQueuedPerPartition,
     ILogger logger, CancellationToken stopping)
@@ -63,10 +53,7 @@ public sealed class PartitionWorkers(
         foreach (var tp in drained) _paused.Remove(tp);
     }
 
-    /// <summary>
-    /// Partitions taken away in a rebalance, or the service stopping: each worker finishes the message in hand,
-    /// its done work is committed, and anything still queued is left for the next owner (redelivered, idempotent).
-    /// </summary>
+    /// <summary>On rebalance or shutdown, finish the current message, commit what's done and leave the rest.</summary>
     public void Stop(IConsumer<string, byte[]> consumer, IEnumerable<TopicPartition> partitions, bool commit)
     {
         var stopping = partitions.Select(tp => (tp, w: _workers.TryRemove(tp, out var w) ? w : null))
@@ -112,8 +99,7 @@ public sealed class PartitionWorkers(
             await _slots.WaitAsync(CancellationToken.None);
             try
             {
-                // Retried in place until the outcome is durable (e.g. Kafka down for the retry copy): the partition
-                // waits rather than skipping ahead, so its committed offset never passes unfinished work.
+                // Keep retrying here so the partition never commits past unfinished work.
                 while (true)
                 {
                     try

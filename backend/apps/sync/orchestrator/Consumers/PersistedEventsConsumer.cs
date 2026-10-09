@@ -8,13 +8,7 @@ using System.Diagnostics;
 
 namespace Orchestrator.Consumers;
 
-/// <summary>
-/// Consumes wound-events.persisted in its own group ("orchestrator"), separate from the persister, so a slow
-/// Recommendation Service call can never delay persistence (§3, §8.3). One workflow run per message, handled by
-/// <see cref="PartitionWorkers"/>: partitions in parallel (Orchestrator:MaxConcurrency, default 6 = one per partition;
-/// 1 = strictly one message at a time), each partition in order. An offset is committed only after
-/// <see cref="OutcomeRouter"/> has made that message's outcome durable.
-/// </summary>
+/// <summary>Consumes persisted events and runs the workflow per message, committing only once the outcome is durable.</summary>
 public sealed class PersistedEventsConsumer(
     WorkflowRunner runner, OutcomeRouter router, IConfiguration config, ILogger<PersistedEventsConsumer> logger)
     : BackgroundService

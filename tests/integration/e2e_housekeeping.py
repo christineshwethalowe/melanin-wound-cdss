@@ -1,15 +1,4 @@
-"""
-Housekeeping (architecture §9.4): outbox cleanup, change-log archival and inbox retention.
-The property that matters: no device ever misses a change. A change-log row is archived only once every device of its
-facility that is not revoked has pulled past it, and only when it is older than the margin. A phone that has never
-pulled holds archival back until an admin revokes it (§12).
-
-Works in a throwaway facility, inserting change-log rows dated two days back so the 24-hour margin has passed, and
-drives real phones through the API. Runs housekeeping cycles with `docker compose run --rm housekeeping run-once`.
-Needs the Docker stack up with migrations applied. Can be re-run.
-
-    python tests/integration/e2e_housekeeping.py
-"""
+"""Housekeeping must never archive a change some active device hasn't pulled yet; safe to re-run."""
 import secrets
 import subprocess
 import sys

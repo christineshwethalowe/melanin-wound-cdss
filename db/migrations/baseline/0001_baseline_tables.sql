@@ -1,10 +1,4 @@
--- REST baseline for the evaluation (architecture §13.1, plan phase 8). POST /v1/baseline/assessments writes these
--- tables and calls the Recommendation Service inside the request. Same database and same stub as the event-driven
--- path, so the only variable is the architecture.
---
--- Deliberately naive: event_id is NOT unique and nothing is deduplicated, so a retried request is stored again.
--- That is what the duplicate-rate comparison measures. Kept in its own schema so it never mixes with the clinical
--- record the event-driven path writes.
+-- REST baseline tables for the evaluation; deliberately no dedup, kept in their own schema.
 CREATE SCHEMA IF NOT EXISTS baseline;
 
 CREATE TABLE baseline.assessment (

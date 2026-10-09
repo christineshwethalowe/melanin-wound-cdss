@@ -14,10 +14,7 @@ public static class Sql
     }
 }
 
-/// <summary>
-/// Writes audit.auth_audit (architecture §12): every login attempt, lockout, logout, registration,
-/// unlock, deactivation and MFA change. Append-only; never used to authenticate.
-/// </summary>
+/// <summary>Writes the append-only auth audit log (logins, lockouts, registrations, MFA changes and so on).</summary>
 public static class AuthAudit
 {
     /// <remarks>Also counts the event in <see cref="AuthMetrics.Events"/> (§13 auth health).</remarks>

@@ -2,8 +2,7 @@ using System.Text.Json;
 
 namespace Sync.Common.Contracts;
 
-// C# shape of contracts/rag-request.schema.json and rag-response.schema.json (RAG contract v1.0, §10.2).
-// The JSON Schemas are the source of truth; change them first, with Member 3's review.
+// C# version of the RAG request/response schemas; the JSON schemas are the source of truth.
 
 /// <summary>POST /v1/recommendations body. Carries no identifiers: CaseId is the assessment id.</summary>
 public sealed record RecommendationRequest(
@@ -24,10 +23,7 @@ public sealed record RagWoundAnalytics(double AreaMm2, IReadOnlyList<ColourRegio
 
 public sealed record HealingHistoryPoint(DateTimeOffset CapturedAt, double AreaMm2, PipelineVersions Pipeline);
 
-/// <summary>
-/// 200 body. Only the fields the backend acts on are typed; the full JSON is stored unchanged in
-/// clinical.recommendation.payload and delivered to the device as-is.
-/// </summary>
+/// <summary>200 response; only fields we use are typed, the full JSON is stored and sent to the device as-is.</summary>
 public sealed record RecommendationResponse(
     string ContractVersion,
     Guid CaseId,

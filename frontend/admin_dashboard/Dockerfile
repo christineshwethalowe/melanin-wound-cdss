@@ -1,5 +1,4 @@
-# Admin dashboard (ADR 0005): `flutter build web` served as static files by nginx.
-# Built from this folder: docker build -t melanin-wound-cdss/admin-dashboard frontend/admin_dashboard
+# Admin dashboard served by nginx; build with: docker build -t melanin-wound-cdss/admin-dashboard frontend/admin_dashboard
 
 ARG FLUTTER_IMAGE=ghcr.io/cirruslabs/flutter:stable
 

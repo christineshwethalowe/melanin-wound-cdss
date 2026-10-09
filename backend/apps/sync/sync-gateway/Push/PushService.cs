@@ -20,11 +20,7 @@ public sealed record PushResponse(string? BatchId, List<PushEventResult> Results
 /// <summary>Thrown when Kafka did not acknowledge every event; the endpoint turns it into 503 + Retry-After.</summary>
 public sealed class BackboneUnavailableException(Exception inner) : Exception("Kafka did not acknowledge the batch", inner);
 
-/// <summary>
-/// Push protocol (architecture §7.1). An event is ACCEPTED only after Kafka acknowledges it with acks=all.
-/// Anything already accepted earlier is answered DUPLICATE without producing it again. Invalid events are
-/// REJECTED individually and never block the rest of the batch.
-/// </summary>
+/// <summary>Push: ACCEPTED only after Kafka acks, DUPLICATE for repeats, and invalid events rejected one by one.</summary>
 public sealed class PushService(
     NpgsqlDataSource db, IProducer<string, byte[]> producer, WoundEventValidator validator, AblationOptions ablation,
     ILogger<PushService> logger)
@@ -60,9 +56,7 @@ public sealed class PushService(
             candidates.Add((i, Guid.Parse(eventIdText), evt.GetProperty("woundId").GetGuid(), evt));
         }
 
-        // Anything the gateway accepted before (or that is already persisted) is a DUPLICATE: a repeated
-        // reconnect ends safely without producing the event again.
-        // In the §13 ablation this check is off, so a device's resends go into Kafka again.
+        // Already accepted or persisted means DUPLICATE, so reconnects don't re-produce (off in the ablation).
         var known = ablation.Enabled ? [] : await KnownEventIdsAsync(candidates.Select(c => c.EventId).ToArray(), ct);
         var toProduce = new List<(int Index, Guid EventId, Guid WoundId, JsonElement Json)>();
         foreach (var c in candidates)
@@ -104,8 +98,7 @@ public sealed class PushService(
         }
         catch (Exception ex) when (ex is ProduceException<string, byte[]> or KafkaException)
         {
-            // Nothing is reported as accepted unless every produce was acknowledged. The device returns the
-            // rows to PENDING and retries; events that did land will then come back as DUPLICATE.
+            // Only report ACCEPTED if every produce was acked; otherwise the device retries and gets DUPLICATEs for what landed.
             throw new BackboneUnavailableException(ex);
         }
 
@@ -154,8 +147,7 @@ public sealed class PushService(
         }
         catch (NpgsqlException ex)
         {
-            // The events are already durable in Kafka, so the device must still be told ACCEPTED.
-            // The missing stage shows up in the auditability-completeness metric.
+            // The events are already safe in Kafka, so still answer ACCEPTED; the gap shows up in the audit metric.
             logger.LogError(ex, "Could not record GATEWAY_ACCEPTED provenance for {Count} events", accepted.Count);
         }
     }

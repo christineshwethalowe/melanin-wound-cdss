@@ -1,14 +1,4 @@
-"""
-Device revocation (architecture §12: "devices are registered and can be revoked").
-A facility admin revokes a lost phone. From then on the phone cannot log in, its refresh tokens stop working at once,
-and its unexpired access tokens are refused by the Sync Gateway within its 30-second revocation cache. Other phones
-and other facilities are unaffected, and the revocation is in the auth audit trail with the admin as actor.
-
-Needs the stack up, migrations applied, the API gateway (8080), identity service and Sync Gateway running.
-Creates its own throwaway admins, nurse and device ids, so it can be re-run.
-
-    python tests/integration/e2e_device_revocation.py
-"""
+"""A revoked phone can't log in or refresh, and the gateway refuses its tokens within 30 s; others are unaffected."""
 import secrets
 import sys
 import time

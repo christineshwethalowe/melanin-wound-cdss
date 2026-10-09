@@ -1,7 +1,6 @@
 import 'token_store_memory.dart' if (dart.library.js_interop) 'token_store_browser.dart' as platform;
 
-/// Where the refresh token lives. ADR 0005: the access token stays in memory; the refresh token lasts for the
-/// browser session only (sessionStorage: one tab, gone when it closes, never written to disk as a cookie would be).
+/// Holds the refresh token in sessionStorage, so it's gone when the tab closes.
 abstract class TokenStore {
   /// sessionStorage in the browser; memory elsewhere (tests).
   factory TokenStore.platform() => platform.create();

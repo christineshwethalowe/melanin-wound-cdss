@@ -161,9 +161,7 @@ def run_once(scenario, mode, args, out_dir):
     setup, during, teardown = SCENARIOS[scenario]
     run_id = f"{scenario.replace('-', '')}{datetime.now().strftime('%H%M%S')}{'b' if mode == 'baseline' else 'e'}"
     toxiproxy.reset()
-    # Devices start at the facility's current cursor, as phones already in use would: otherwise each new simulated
-    # device first downloads the facility's whole history and the run measures that, not its own traffic.
-    # Housekeeping may have archived the newest rows of an idle facility, so the archive counts too.
+    # Start devices at the current cursor so the run measures only its own traffic (archive counts too).
     head = metrics.psql_csv("select greatest((select max(server_seq) from sync.change_log), "
                             "(select max(server_seq) from sync.change_log_archive), 0) as head")[0]["head"]
     setup()
@@ -176,8 +174,7 @@ def run_once(scenario, mode, args, out_dir):
         sim = subprocess.run(
             ["dotnet", "run", "--no-build", "--project", "tests/device-simulator", "--",
              "--gateway", PROXIED_GATEWAY, "--setup-gateway", DIRECT_GATEWAY,
-             # A new TCP connection per request, so Toxiproxy's per-connection faults reach every request; the same
-             # in every scenario, so they stay comparable.
+             # New TCP connection per request so Toxiproxy faults hit every request in every scenario.
              "--connection-lifetime-s", "0", "--start-cursor", head,
              "--capture-interval-ms", str(args.capture_interval_ms),
              "--devices", str(args.devices), "--events", str(args.events),

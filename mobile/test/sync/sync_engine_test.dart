@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:melanin_wound_cdss/features/sync/api/sync_api.dart';
 import 'package:melanin_wound_cdss/features/sync/auth/auth_session.dart';
 import 'package:melanin_wound_cdss/features/sync/data/app_database.dart';
 import 'package:melanin_wound_cdss/features/sync/data/queue_repository.dart';
@@ -137,6 +138,59 @@ void main() {
     expect((await queue.all()).single.status, QueueStatus.complete);
   });
 
+  test('a refresh answered 503 backs off like a busy server, and the run never throws (§7.1)', () async {
+    await signedIn();
+    await queue.enqueue(sampleEvent());
+    now = now.add(const Duration(hours: 1)); // the access token expired: the run starts with a refresh
+    gateway.refreshError = ApiException(503, null, const Duration(seconds: 30));
+    final report = await engine.sync();
+    expect(report.outcome, SyncOutcome.serverBusy);
+    expect(report.retryAt!.difference(now), greaterThanOrEqualTo(const Duration(seconds: 30)));
+    expect(await queue.getState(SyncStateKeys.nextAttemptAt), isNotEmpty);
+    expect((await queue.all()).single.status, QueueStatus.pending);
+    expect(await auth.hasSession(), isTrue, reason: 'a busy server is not a reason to sign in again');
+    expect((await engine.sync(force: true)).outcome, SyncOutcome.success, reason: 'lease released, recovers');
+  });
+
+  test('a refresh failing while retrying a 401 push puts the batch straight back to pending', () async {
+    await signedIn();
+    await queue.enqueue(sampleEvent());
+    gateway.scripted.add(PushFault.expiredToken401);
+    gateway.refreshError = ApiException(500);
+    final report = await engine.sync();
+    expect(report.outcome, SyncOutcome.offline);
+    expect((await queue.all()).single.status, QueueStatus.pending, reason: 'not left leased for two minutes');
+    expect(gateway.stored, isEmpty);
+  });
+
+  test('a malformed answer (a Wi-Fi login page) backs off and leaves no row leased', () async {
+    await signedIn();
+    await queue.enqueue(sampleEvent());
+    gateway.pushError = const FormatException('<html>Sign in to the hospital Wi-Fi</html>');
+    final report = await engine.sync();
+    expect(report.outcome, SyncOutcome.offline);
+    expect(report.retryAt, isNotNull);
+    expect((await queue.all()).single.status, QueueStatus.pending);
+    expect((await engine.sync(force: true)).outcome, SyncOutcome.success);
+  });
+
+  test('a run whose lease was taken over stops before the next batch (§6.2 single flight)', () async {
+    await signedIn();
+    for (var i = 0; i < 60; i++) {
+      await queue.enqueue(sampleEvent());
+    }
+    // During the first push this run is too slow: its lease lapses and another isolate's run takes it.
+    gateway.onPush = () async {
+      gateway.onPush = null;
+      await queue.setState(SyncStateKeys.syncLeaseOwner, 'another-run');
+    };
+    final report = await engine.sync();
+    expect(report.outcome, SyncOutcome.alreadyRunning);
+    expect(gateway.pushes, 1, reason: 'the second batch is left to the run that holds the lease');
+    expect((await queue.counts()).of(QueueStatus.pending), 10);
+    expect(await queue.getState(SyncStateKeys.syncLeaseOwner), 'another-run', reason: 'its lease is not released');
+  });
+
   test('single flight: concurrent calls join one run', () async {
     await signedIn();
     for (var i = 0; i < 3; i++) {
@@ -156,8 +210,7 @@ void main() {
   });
 
   test('§14.1 step 4: a flaky gateway never causes a lost or stuck row', () async {
-    // A third of pushes fail at random: unreachable, response lost after the server stored the batch, 503, 429,
-    // expired token. Captures keep arriving between sync runs.
+    // A third of pushes fail at random while new captures keep arriving.
     build(fake: FakeGateway(faultRate: 0.33, random: Random(7)), seed: 7);
     await signedIn();
     final ids = <String>{};

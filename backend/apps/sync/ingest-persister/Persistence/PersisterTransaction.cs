@@ -11,16 +11,7 @@ namespace IngestPersister.Persistence;
 
 public enum PersistOutcome { Persisted, Deduplicated, RevisionConflict }
 
-/// <summary>
-/// One transaction per event (architecture §9.4):
-///   1. advisory lock on assessment_id
-///   2. upsert clinical.patient (patient_ref + facility only; display_alias is never taken from Kafka)
-///   3. upsert clinical.wound
-///   4. insert clinical.wound_assessment, ignoring conflicts
-///   5a. inserted  → PERSISTED provenance + outbox row (wound-events.persisted) + change_log PERSISTED
-///   5b. duplicate → DEDUPLICATED provenance only
-/// The caller commits the Kafka offset only after this returns.
-/// </summary>
+/// <summary>Stores one event in a single transaction; new events also get an outbox row, duplicates are just noted.</summary>
 public sealed class PersisterTransaction(NpgsqlDataSource db, AblationOptions ablation)
 {
     public async Task<PersistOutcome> ExecuteAsync(
@@ -31,8 +22,7 @@ public sealed class PersisterTransaction(NpgsqlDataSource db, AblationOptions ab
 
         await AdvisoryLock.AcquireForAssessmentAsync(conn, tx, evt.AssessmentId, ct);
 
-        // §13 ablation: every message received, with no unique constraint — what the store would hold without
-        // idempotency. The real insert below still absorbs the repeat.
+        // Ablation: log every message received without dedup, to show what we'd store without idempotency.
         if (ablation.Enabled)
             await ExecAsync(conn, tx, """
                 INSERT INTO ablation.wound_assessment (event_id, assessment_id, revision, device_id, kafka_ref)
@@ -102,8 +92,7 @@ public sealed class PersisterTransaction(NpgsqlDataSource db, AblationOptions ab
         }
         else
         {
-            // Nothing inserted: either this exact event was stored before (a redelivery, absorbed by design),
-            // or another event already holds this (assessment_id, revision) — a client bug, not a duplicate.
+            // Nothing inserted: either a harmless redelivery or a different event reusing the same revision (a client bug).
             await using var check = new NpgsqlCommand(
                 "SELECT EXISTS (SELECT 1 FROM clinical.wound_assessment WHERE event_id = @e)", conn, tx);
             check.Parameters.AddWithValue("e", evt.EventId);

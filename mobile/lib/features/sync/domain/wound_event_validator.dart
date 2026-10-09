@@ -1,9 +1,6 @@
 import 'dart:convert';
 
-/// Validates a Wound Event before it is queued (architecture §5: "One schema, three enforcement points ... used by the
-/// Flutter app before enqueue"). Mirrors contracts/wound-event.schema.json rule for rule, plus the 16 KB cap the gateway
-/// enforces; test/sync/wound_event_validator_test.dart runs it against the contract's own examples so the two cannot
-/// drift apart. A rejected event never enters the queue: the clinician fixes the form instead.
+/// Checks a wound event against the shared schema and 16 KB limit before it's queued.
 class WoundEventValidator {
   static const maxSizeBytes = 16 * 1024;
   static const triState = {'present', 'absent', 'not_recorded'};

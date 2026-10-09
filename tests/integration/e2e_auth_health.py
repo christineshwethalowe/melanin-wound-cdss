@@ -1,14 +1,4 @@
-"""
-Auth health (architecture §13 metric table: "login failure rate, lockouts per day, average session lifetime").
-Drives known login traffic, then checks the numbers tests/evaluation/metrics.py computes for that window, that a
-refresh stays in the same session (family), and that the identity service's metrics reach Prometheus
-(auth_events_total, auth_sessions_active, auth_session_lifetime_seconds) for the Grafana dashboard.
-
-Needs the stack up with migrations applied; the Prometheus part needs the tools profile (skipped otherwise).
-Run it while nothing else is logging in, because the window's counts must be exactly this script's.
-
-    python tests/integration/e2e_auth_health.py
-"""
+"""Drives known login traffic and checks the auth-health metrics and Prometheus series (run while nobody else logs in)."""
 import json
 import os
 import secrets

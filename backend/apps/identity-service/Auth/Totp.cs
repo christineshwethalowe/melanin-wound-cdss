@@ -4,10 +4,7 @@ using System.Text;
 
 namespace IdentityService.Auth;
 
-/// <summary>
-/// Time-based one-time passwords (RFC 6238: HMAC-SHA1, 30-second steps, 6 digits), compatible with
-/// Google Authenticator, Microsoft Authenticator and similar apps.
-/// </summary>
+/// <summary>Standard 6-digit, 30-second TOTP codes that work with common authenticator apps.</summary>
 public static class Totp
 {
     public const int StepSeconds = 30;
@@ -32,10 +29,7 @@ public static class Totp
         return (binary % modulo).ToString().PadLeft(digits, '0');
     }
 
-    /// <summary>
-    /// Returns the matching step, or null. A step at or before <paramref name="lastUsedStep"/> is refused,
-    /// so a code that was already accepted cannot be replayed.
-    /// </summary>
+    /// <summary>Returns the matching step or null; steps already used are refused to stop replays.</summary>
     public static long? Verify(byte[] secret, string? code, DateTimeOffset now, long? lastUsedStep)
     {
         if (code is null || code.Length != Digits || !code.All(char.IsAsciiDigit)) return null;

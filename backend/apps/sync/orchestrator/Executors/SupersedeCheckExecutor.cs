@@ -4,12 +4,7 @@ using Orchestrator.Persistence;
 
 namespace Orchestrator.Executors;
 
-/// <summary>
-/// If a higher revision of the same assessment is already stored, marks this one SUPERSEDED and ends the
-/// run (architecture §10.1). Needed because retry topics can reorder revisions, and because a device can push
-/// revisions 1 and 2 together: only the newest one gets advice. Advisory lock first, then SELECT ... FOR UPDATE
-/// on the latest row (§9.3 lock order).
-/// </summary>
+/// <summary>Marks this revision SUPERSEDED and stops if a newer one is already stored.</summary>
 [YieldsOutput(typeof(OrchestrationOutcome))]
 public sealed class SupersedeCheckExecutor(IOrchestratorStore store) : Executor<InboxChecked, SupersedeChecked>("SupersedeCheck")
 {

@@ -1,12 +1,4 @@
-"""
-Generates infra/grafana/dashboards/sync-pipeline.json (plan phase 11). Edit this, not the JSON, then run:
-
-    python infra/grafana/build_dashboard.py
-
-Every query uses metric and label names checked against Prometheus: sync_* from Sync.Common SyncMetrics, auth_* from
-the identity service's AuthMetrics,
-http_* from OpenTelemetry's ASP.NET Core / HttpClient instrumentation, kafka_consumergroup_lag from kafka-exporter.
-"""
+"""Generates the Grafana sync-pipeline dashboard JSON; edit this file, not the JSON, then run it."""
 import json
 import os
 

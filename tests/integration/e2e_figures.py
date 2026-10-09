@@ -1,11 +1,4 @@
-"""
-Figures proxy (architecture §10.4): GET /v1/figures/{corpusVersion}/{figureId} through the API gateway, proxied by the
-Sync Gateway to the Recommendation Service (the rag-stub serves figures F1-F3), so the device never calls it directly.
-
-DISRUPTIVE: briefly restarts the rag-stub in 503 mode; it is put back. Local Docker stack only.
-
-    python tests/integration/e2e_figures.py
-"""
+"""DISRUPTIVE: tests the figures proxy through the gateway, including a 503 from the stub (local Docker only)."""
 import os
 import secrets
 import subprocess
@@ -68,8 +61,7 @@ for bad in ["stub-0/..%2F..%2Fhealth", "stub-0/F1%3Fx%3D1", "stub-0/F1..", "stub
     status, _, data = get(f"/v1/figures/{bad}", token)
     check(f"unsafe id refused by the proxy, never forwarded ({bad[:30]})",
           status == 400 and b"INVALID_FIGURE_ID" in data, f"{status} {data[:60]!r}")
-# The HTTP layer collapses an encoded "..": the path then matches no route at all (empty 404). A forwarded request
-# would come back as FIGURE_NOT_FOUND instead.
+# An encoded ".." gets collapsed so nothing matches (empty 404); a forwarded one would say FIGURE_NOT_FOUND.
 status, _, data = get("/v1/figures/%2E%2E/F1", token)
 check("encoded '..' never reaches the proxy (no route)", status == 404 and b"FIGURE_NOT_FOUND" not in data,
       f"{status} {data[:60]!r}")

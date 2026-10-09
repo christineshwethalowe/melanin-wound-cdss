@@ -10,32 +10,20 @@ public sealed record AuthResult(TokenPair? Tokens, string? ReasonCode)
     public static AuthResult Fail(string reason) => new(null, reason);
 }
 
-/// <summary>
-/// Login, refresh and logout against clinical.clinician / clinician_credential / clinician_session
-/// (architecture §7.3, §9.1). Every attempt is written to audit.auth_audit.
-/// A session belongs to a client (<see cref="Clients"/>): the mobile app on a registered device, or the
-/// admin dashboard in a browser (no device, admins only).
-/// </summary>
+/// <summary>Login, refresh and logout for clinicians on the mobile app or the admin dashboard; every attempt is audited.</summary>
 public sealed class AuthService(NpgsqlDataSource db, PasswordHasher hasher, JwtTokenService tokens, SecretProtector secrets)
 {
     public const int MaxFailedAttempts = 5;
     public static readonly TimeSpan LockoutDuration = TimeSpan.FromMinutes(15);
 
-    /// <summary>
-    /// Argon2id uses 64 MB per check on purpose; bound how many run at once so a burst of logins (100 devices
-    /// reconnecting, §11) queues in memory instead of exhausting it.
-    /// </summary>
+    /// <summary>Caps concurrent Argon2id checks (64 MB each) so a login burst queues instead of running out of memory.</summary>
     private readonly SemaphoreSlim _hashing = new(Math.Max(2, Environment.ProcessorCount));
 
-    /// <param name="deviceId">Required for <see cref="Clients.Mobile"/>, null for <see cref="Clients.AdminDashboard"/>.</param>
-    /// <param name="totp">Required once the clinician has MFA enabled. A wrong code counts as a failed attempt.</param>
+    /// <param name="deviceId">Mobile only; null for the dashboard.</param> <param name="totp">Needed once MFA is on; a wrong code counts as a failed attempt.</param>
     public async Task<AuthResult> LoginAsync(string username, string password, string? deviceId, string? totp,
         CancellationToken ct, string client = Clients.Mobile)
     {
-        // The slow password check runs first, holding no database connection and no row lock: done inside the
-        // transaction, 100 simultaneous logins kept every pooled connection busy hashing and the rest timed out
-        // (found by the §13 device simulator). The transaction below re-reads the row under lock and uses this
-        // result only if it was computed against the hash that is still stored.
+        // Hash the password before the transaction so slow checks don't hold pooled connections; the result is reused only if the hash hasn't changed.
         var (checkedHash, passwordOk) = await PreVerifyPasswordAsync(username, password, ct);
 
         await using var conn = await db.OpenConnectionAsync(ct);
@@ -90,8 +78,7 @@ public sealed class AuthService(NpgsqlDataSource db, PasswordHasher hasher, JwtT
             return AuthResult.Fail("CREDENTIAL_LOCKED");
         }
 
-        // Normally the result from before the lock. If the hash changed in between (e.g. a password reset), check
-        // again against the stored one, so a stale result can never let anyone in.
+        // If the hash changed meanwhile (e.g. a reset), check again so a stale result can never let anyone in.
         var valid = passwordHash == checkedHash
             ? passwordOk
             : await VerifyAsync(password, passwordHash, salt, ct);
@@ -152,10 +139,7 @@ public sealed class AuthService(NpgsqlDataSource db, PasswordHasher hasher, JwtT
         return AuthResult.Ok(pair);
     }
 
-    /// <summary>
-    /// Reads the stored hash with a short query (connection returned at once), then checks the password with no
-    /// connection held. Skips the check for an unknown or locked account; the transaction answers those.
-    /// </summary>
+    /// <summary>Checks the password outside any connection; skips unknown or locked accounts and leaves them to the transaction.</summary>
     private async Task<(string? Hash, bool Ok)> PreVerifyPasswordAsync(string username, string password, CancellationToken ct)
     {
         string hash; byte[] salt;

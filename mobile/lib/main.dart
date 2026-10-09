@@ -1,13 +1,19 @@
 import 'package:flutter/material.dart';
 
 import 'app/app_services.dart';
+import 'app/background_sync.dart';
 import 'features/sync/ui/sign_in_screen.dart';
-import 'features/sync/ui/sync_home_screen.dart';
+import 'app/app_shell.dart';
+import 'core/theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final services = await AppServices.open();
+  // The app lives as long as its process, so the listener is never cancelled.
+  BackgroundSync.listen(services.db);
   runApp(WoundCdssApp(services: services));
+  // Not awaited: the first frame must not wait on WorkManager.
+  BackgroundSync.schedule().ignore();
 }
 
 class WoundCdssApp extends StatefulWidget {
@@ -44,11 +50,12 @@ class _WoundCdssAppState extends State<WoundCdssApp> {
 
   @override
   Widget build(BuildContext context) => MaterialApp(
-        title: 'Wound Assessment',
-        theme: ThemeData(colorSchemeSeed: Colors.teal, useMaterial3: true),
+        title: 'WoundAI',
+        debugShowCheckedModeBanner: false,
+        theme: woundTheme(),
         home: switch (_signedIn) {
           null => const Scaffold(body: Center(child: CircularProgressIndicator())),
-          true => SyncHomeScreen(services: widget.services, onSignedOut: () => setState(() => _signedIn = false)),
+          true => AppShell(services: widget.services, onSignedOut: () => setState(() => _signedIn = false)),
           false => SignInScreen(
               services: widget.services,
               onSignedIn: () {

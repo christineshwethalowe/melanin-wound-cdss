@@ -98,8 +98,7 @@ def run_suite(script, label):
         ok = out.returncode == 0 and failed == 0
         if ok or attempt == 2:
             break
-        # Most first-attempt failures here are the gateway's per-minute login limit or an idle service's dropped
-        # connection; one retry after the window resets tells those apart from a real failure.
+        # Retry once to tell rate limits or dropped idle connections apart from a real failure.
         print(f"  {YELLOW}....{RESET}  {label}: failed, retrying once after the rate-limit window (65 s)", flush=True)
         time.sleep(65)
         if script == "e2e_db_roles":

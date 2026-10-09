@@ -1,12 +1,4 @@
-"""
-Plan phase 6 (architecture §10, §2.2 steps 7-10): the orchestrator turns a persisted assessment into a stored,
-delivered recommendation, exactly once, and routes failures to the retry topics or the DLQ.
-
-DISRUPTIVE: restarts the rag-stub with different failure modes, kills the orchestrator once and replays
-wound-events.persisted. Everything is put back at the end. Local Docker stack only.
-
-    python tests/integration/e2e_orchestrator.py
-"""
+"""DISRUPTIVE: the orchestrator stores exactly one recommendation and routes failures to retry or DLQ (local Docker only)."""
 import os
 import secrets
 import subprocess
@@ -132,8 +124,7 @@ try:
     # --------------------------------------------------------------------------------------------------------
     print("\n§11: replaying wound-events.persisted stores nothing twice")
     time.sleep(3)
-    # Only events that already had an answer must be left alone. Events that never finished (e.g. sent to the DLQ
-    # earlier) are legitimately completed by a replay, so global totals are not a valid measure.
+    # Only check events that already had an answer; unfinished ones can legitimately complete on replay.
     cutoff = one("select now()")
     answered = f"(select event_id from audit.provenance where stage = 'RAG_RETURNED' and recorded_at < '{cutoff}')"
     rag_before = one(f"select count(*) from audit.provenance where stage = 'RAG_RETURNED' and event_id in {answered}")

@@ -4,10 +4,7 @@ namespace Housekeeping;
 
 public sealed record HeldBackFacility(string FacilityId, string DeviceId, long DeviceCursor, DateTime? LastPullAt);
 
-/// <summary>
-/// The retention rules of architecture §9.4 as SQL. Each method deletes (or moves) at most one batch and returns the
-/// number of rows; <see cref="HousekeepingWorker"/> repeats it until a batch comes back short.
-/// </summary>
+/// <summary>Retention rules as SQL; each method handles one batch and returns the row count.</summary>
 public static class HousekeepingStore
 {
     /// <summary>Session-level advisory lock: with several replicas, only one runs a cycle at a time.</summary>
@@ -32,11 +29,7 @@ public static class HousekeepingStore
         WHERE i.consumer_name = old.consumer_name AND i.event_id = old.event_id
         """;
 
-    /// <summary>
-    /// A3: a row moves to the archive once every device of its facility that is not revoked has a cursor at or past it
-    /// (a device that has never pulled counts as cursor 0), and it is older than the margin. A revoked device no
-    /// longer holds rows back, so revoking a lost phone releases them. A facility with no active device holds none.
-    /// </summary>
+    /// <summary>Archives rows every active device in the facility has already pulled and that are old enough.</summary>
     public const string ArchiveChangeLogSql = """
         WITH floor AS (
             SELECT f.facility_id,
@@ -66,10 +59,7 @@ public static class HousekeepingStore
         SELECT * FROM moved
         """;
 
-    /// <summary>
-    /// For each facility that still has rows old enough to archive but not yet passed by every cursor: the device with
-    /// the lowest cursor, i.e. the one holding archival back. An admin can revoke it if the phone is lost.
-    /// </summary>
+    /// <summary>Per facility, finds the device with the lowest cursor that is holding archival back.</summary>
     public const string HeldBackSql = """
         SELECT DISTINCT ON (d.facility_id) d.facility_id, d.device_id, COALESCE(dc.last_seq, 0), dc.updated_at
         FROM clinical.device d

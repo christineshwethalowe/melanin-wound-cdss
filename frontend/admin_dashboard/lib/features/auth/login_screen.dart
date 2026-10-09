@@ -5,8 +5,7 @@ import '../../core/auth_session.dart';
 import '../../app/theme.dart';
 import '../../core/toast.dart';
 
-/// Admin sign-in. When the server answers MFA_REQUIRED the code field appears and the same credentials are sent again
-/// with the code; the server never says which of username or password was wrong.
+/// Admin sign-in; shows the code field when the server asks for MFA.
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key, required this.session});
 

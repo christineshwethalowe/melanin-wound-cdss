@@ -1,15 +1,6 @@
 namespace Sync.Common.Kafka;
 
-/// <summary>
-/// Retry chain from architecture §8.3 and §11: a message that fails for a transient reason is copied to the
-/// next hop and the original offset is committed, so its partition keeps moving.
-///
-///   source topic → wound-events.retry.30s → wound-events.retry.5m → wound-events.dlq
-///
-/// Retry consumers pause their partition until a message's timestamp + delay has passed. Contract or
-/// ordering errors (a 422 or 409 from the Recommendation Service, an unparseable payload) skip the retries
-/// and go straight to the DLQ, because retrying cannot fix them.
-/// </summary>
+/// <summary>Retry chain: retry.30s → retry.5m → DLQ; contract errors skip straight to the DLQ.</summary>
 public static class RetryRouting
 {
     public const string RetryCountHeader = "retry-count";

@@ -7,11 +7,7 @@ namespace SyncGateway.Endpoints;
 
 public sealed record PatientAliasRequest(string? DisplayAlias);
 
-/// <summary>
-/// The local patient record (architecture §9.1): lets signed-in clinicians see "whose wound is this" with a
-/// label they chose (initials, bed number), without that label ever entering the sync path, Kafka or the
-/// Recommendation Service. Everything is scoped to the clinician's facility.
-/// </summary>
+/// <summary>Lets clinicians label patients locally; the label never leaves this service.</summary>
 public static partial class PatientEndpoints
 {
     public const int MaxAliasLength = 64;
@@ -44,8 +40,7 @@ public static partial class PatientEndpoints
             });
         });
 
-        // Creates the record if the device labels a patient before any assessment has synced.
-        // A null or empty alias clears it.
+        // Create the patient if needed; a null or empty alias clears the label.
         patients.MapPut("/{patientRef}/alias", async (string patientRef, PatientAliasRequest req, ClaimsPrincipal user,
             NpgsqlDataSource db, CancellationToken ct) =>
         {

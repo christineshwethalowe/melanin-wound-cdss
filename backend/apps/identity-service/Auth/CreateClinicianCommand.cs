@@ -3,15 +3,7 @@ using IdentityService.Admin;
 
 namespace IdentityService.Auth;
 
-/// <summary>
-/// Registers a clinician from the command line. Used to bootstrap the first admin of a facility and for
-/// local testing; after that, admins register clinicians through POST /v1/admin/clinicians.
-///   dotnet run --project backend/apps/identity-service -- create-clinician [--if-not-exists] &lt;username&gt; &lt;password&gt; &lt;role&gt; &lt;facilityId&gt; [full name]
-/// Role is one of nurse, wound_specialist, admin. The facility must already exist.
-/// With --if-not-exists an existing username is reported and skipped (its password is left unchanged) and the command
-/// succeeds, so a seed step can run on every start; any other problem still fails it. Without it, a taken username is
-/// an error, so a typo at the command line is not mistaken for a new account.
-/// </summary>
+/// <summary>CLI to register a clinician: create-clinician [--if-not-exists] username password role facilityId [full name].</summary>
 public static class CreateClinicianCommand
 {
     public static async Task<int> RunAsync(string[] args, NpgsqlDataSource db)

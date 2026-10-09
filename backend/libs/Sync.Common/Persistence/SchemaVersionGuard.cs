@@ -2,10 +2,7 @@ using Npgsql;
 
 namespace Sync.Common.Persistence;
 
-/// <summary>
-/// Startup check from architecture §9.2: a service refuses to run against a schema version it
-/// was not built for. Every service calls this before it starts consuming or serving.
-/// </summary>
+/// <summary>Refuses to start against a schema version this service wasn't built for.</summary>
 public static class SchemaVersionGuard
 {
     public static async Task EnsureAsync(

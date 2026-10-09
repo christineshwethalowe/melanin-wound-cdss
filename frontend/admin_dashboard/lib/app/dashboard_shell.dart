@@ -6,8 +6,7 @@ import '../features/audit/audit_page.dart';
 import '../features/clinicians/clinicians_page.dart';
 import '../features/devices/devices_page.dart';
 
-/// The signed-in frame: navigation, who is signed in and for which facility, and sign-out. Every page is scoped to
-/// that facility by the server.
+/// The signed-in frame: navigation, current user and facility, and sign-out.
 class DashboardShell extends StatefulWidget {
   const DashboardShell({super.key, required this.session});
 

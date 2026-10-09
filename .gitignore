@@ -24,11 +24,34 @@ research/**/runs/
 research/**/weights/
 
 # Secrets and local config
-.env.example
 .env
+.env.*
+*.env
 *.pem
 *.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+key.properties
+secrets/
+*.secret
+*.secrets.json
 appsettings.Development.json
+appsettings.*.local.json
+
+# Docs and Markdown (kept local, not in the repo)
+*.md
+docs/
+
+# AI assistant files and generated notes
+.claude/
+CLAUDE.md
+AGENTS.md
+.cursor/
+.cursorrules
+.copilot/
+.aider*
 
 # OS / IDE
 .DS_Store

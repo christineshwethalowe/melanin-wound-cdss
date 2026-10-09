@@ -1,14 +1,4 @@
-"""
-End-to-end smoke test for plan phases 1-5 (docs/member4-backend-plan.md).
-
-Needs: docker compose stack up, migrations applied, a clinician created, the API gateway (port 8080), identity service, Sync Gateway,
-ingest persister and outbox relay running.
-
-    python tests/integration/e2e_smoke.py
-
-Test clinician (local dev only), created with:
-    dotnet run --project backend/apps/identity-service -- create-clinician n.silva Demo-Pass-2026! nurse fac-001 N. Silva
-"""
+"""Smoke test for the full push-to-advice round trip; needs the stack up and a demo clinician (n.silva)."""
 import os
 import sys
 

@@ -23,8 +23,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      # ajv-formats adds the date-time / uuid / uri formats the contracts use; without it ajv's strict mode
-      # rejects every schema that has a "format".
+      # ajv-formats adds date-time/uuid/uri so strict mode accepts the contract schemas.
       - name: Install ajv
         run: npm install --no-save --no-package-lock ajv-cli@5 ajv-formats@3
       - name: Every contract compiles
@@ -43,13 +42,22 @@ jobs:
           npx ajv test --spec=draft2020 -c ajv-formats -s contracts/tests/auth-login-request.schema.json -r contracts/auth.schema.json -d "contracts/examples/auth.login.*.valid.json" --valid
           npx ajv test --spec=draft2020 -c ajv-formats -s contracts/tests/auth-login-request.schema.json -r contracts/auth.schema.json -d "contracts/examples/auth.login.*.invalid.json" --invalid
 
-  # Dev setup and evaluation tooling: catches a broken compose file, a Python script that no longer compiles, an
-  # unparseable VS Code config, or a Grafana dashboard edited by hand instead of through its generator.
+  # Dev tooling checks: compose file, Python scripts, VS Code config and the generated Grafana dashboard.
   tooling:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: docker-compose.yml is valid (including the tools profile)
+        # Placeholders only: this step checks the file's syntax, nothing connects to a database.
+        env:
+          POSTGRES_PASSWORD: ci-placeholder
+          DB_PASSWORD_IDENTITY: ci-placeholder
+          DB_PASSWORD_GATEWAY: ci-placeholder
+          DB_PASSWORD_PERSISTER: ci-placeholder
+          DB_PASSWORD_RELAY: ci-placeholder
+          DB_PASSWORD_ORCHESTRATOR: ci-placeholder
+          DB_PASSWORD_RAG: ci-placeholder
+          DB_PASSWORD_HOUSEKEEPING: ci-placeholder
         run: docker compose --profile tools config --quiet
       - uses: actions/setup-python@v5
         with:
@@ -82,8 +90,7 @@ jobs:
       - run: flutter pub get
       - run: dart run build_runner build --delete-conflicting-outputs
       - run: flutter analyze
-      # hashFiles() is only allowed in step conditions, not job conditions. Skip until the first test exists
-      # (flutter test fails on an empty test folder).
+      # hashFiles() only works in step conditions; skip until a test exists since flutter test fails on an empty folder.
       - if: hashFiles('mobile/test/**/*_test.dart') != ''
         run: flutter test
 

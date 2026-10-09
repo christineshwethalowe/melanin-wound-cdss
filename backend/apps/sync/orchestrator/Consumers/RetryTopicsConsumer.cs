@@ -4,16 +4,7 @@ using Sync.Common.Kafka;
 
 namespace Orchestrator.Consumers;
 
-/// <summary>
-/// Delayed redelivery (architecture §8.1, §8.3): consumes wound-events.retry.30s and .retry.5m. A message is
-/// processed once its timestamp + the topic's delay has passed; until then only its partition is paused, so other
-/// partitions and the main consumer keep moving. It then runs the same workflow; a failure moves it one hop
-/// further (<see cref="RetryRouting.NextHop"/>), ending in wound-events.dlq. This, not partitioning alone, is what
-/// removes head-of-line blocking.
-///
-/// Uses its own consumer group (<see cref="ConsumerGroups.OrchestratorRetry"/>) so pausing for minutes, or a
-/// rebalance here, never stalls the main orchestrator consumer.
-/// </summary>
+/// <summary>Handles the delayed retry topics, pausing only the waiting partition; failures move one hop further toward the DLQ.</summary>
 public sealed class RetryTopicsConsumer(
     WorkflowRunner runner, OutcomeRouter router, IConfiguration config, ILogger<RetryTopicsConsumer> logger)
     : BackgroundService
@@ -57,8 +48,7 @@ public sealed class RetryTopicsConsumer(
             ConsumeResult<string, byte[]>? result;
             try
             {
-                // Short timeout: wake up regularly to resume partitions whose delay has passed. Calling Consume
-                // also keeps the consumer in its group while partitions are paused.
+                // Short timeout so we wake up to resume partitions and stay in the consumer group.
                 result = consumer.Consume(TimeSpan.FromSeconds(1));
             }
             catch (OperationCanceledException) { break; }

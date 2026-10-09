@@ -7,11 +7,7 @@ using Sync.Common.Telemetry;
 
 namespace OutboxRelay;
 
-/// <summary>
-/// Polls messaging.outbox, publishes each row to its topic, then marks it published — all inside one
-/// transaction. FOR UPDATE SKIP LOCKED lets several relay replicas run without double-publishing (§9.3).
-/// A crash after publishing but before commit re-sends the row; consumers drop repeats via messaging.inbox.
-/// </summary>
+/// <summary>Publishes outbox rows to Kafka and marks them sent; SKIP LOCKED lets several relays run safely.</summary>
 public sealed class RelayWorker(
     NpgsqlDataSource db, IProducer<string, byte[]> producer, ILogger<RelayWorker> logger) : BackgroundService
 {

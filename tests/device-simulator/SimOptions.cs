@@ -6,14 +6,11 @@ public enum SimMode { EventDriven, Baseline }
 public sealed record SimOptions
 {
     public string Gateway { get; init; } = "http://localhost:8080/";
-    /// <summary>Where the admin registers the clinicians: setup, not part of what is measured, so it can bypass
-    /// a faulty network (defaults to <see cref="Gateway"/>).</summary>
+    /// <summary>Where the admin registers clinicians; setup only, so it can skip the faulty network.</summary>
     public string? SetupGateway { get; init; }
-    /// <summary>How long a device keeps a TCP connection. 0 = a new connection per request, so per-connection
-    /// network faults (Toxiproxy) reach every request.</summary>
+    /// <summary>How long a device keeps a TCP connection; 0 means a new one per request.</summary>
     public int ConnectionLifetimeSeconds { get; init; } = 120;
-    /// <summary>Pull cursor each device starts from. 0 = a brand-new device that downloads the facility's whole
-    /// history; experiments pass the current head so a run measures only its own traffic.</summary>
+    /// <summary>Starting pull cursor; 0 downloads the whole history, experiments pass the current head.</summary>
     public long StartCursor { get; init; }
     public int Devices { get; init; } = 10;
     public int EventsPerDevice { get; init; } = 20;

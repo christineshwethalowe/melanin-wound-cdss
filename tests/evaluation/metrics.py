@@ -103,9 +103,7 @@ def collect(run_id, mode, sim_csv_path, started_at, finished_at):
                            "accept_ms": d["accept_ms"] or None,
                            "persisted_ms": _ms(at("PERSISTED"), enq),
                            "advice_stored_ms": _ms(at("RECOMMENDATION_STORED"), enq),
-                           # Pull is facility-scoped, so another phone may pull the advice first; the originating
-                           # phone's own completion time is the delivery latency that matters (DELIVERED stays in
-                           # the audit check).
+                           # Use the originating phone's own completion time, since another phone may pull the advice first.
                            "delivered_ms": d["complete_ms"] or None,
                            "deduplicated": st.get("DEDUPLICATED", (None, 0))[1],
                            "audit_complete": has_all})
@@ -152,17 +150,7 @@ def collect(run_id, mode, sim_csv_path, started_at, finished_at):
 
 
 def auth_health(since, until):
-    """
-    The §13 auth-health metrics for [since, until], from audit.auth_audit and clinical.clinician_session.
-
-    login failure rate    failed attempts / attempts. A LOCKOUT row is the failed attempt that locked the account, so
-                          it counts as a failure. MFA_REQUIRED is the server asking for a code, not a failed attempt,
-                          so it is left out of both (the 5-attempt lockout ignores it too).
-    lockouts per day      lockouts in the period, scaled to 24 hours
-    session lifetime      a session is a login and its chain of refreshes (one family_id). For sessions that started
-                          in the period: the mean and median time from login to logout or revocation for those that
-                          ended in it, and how many are still active at the end
-    """
+    """Auth-health metrics for [since, until]: login failure rate, lockouts per day and session lifetimes."""
     window = f"'{since.isoformat()}' and '{until.isoformat()}'"
     a = psql_csv(f"""
         select count(*) filter (where action = 'LOGIN' and success) as logins,

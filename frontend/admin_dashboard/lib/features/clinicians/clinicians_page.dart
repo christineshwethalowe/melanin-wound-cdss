@@ -6,8 +6,7 @@ import '../../core/models.dart';
 import '../../core/ui.dart';
 import 'register_clinician_dialog.dart';
 
-/// The facility's clinicians: register, unlock, reset MFA, deactivate (architecture §7, ADR 0005). Each action is
-/// audited server-side with the admin as actor.
+/// Facility clinicians: register, unlock, reset MFA or deactivate (all audited).
 class CliniciansPage extends StatefulWidget {
   const CliniciansPage({super.key, required this.session});
 

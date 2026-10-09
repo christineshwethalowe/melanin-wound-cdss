@@ -4,8 +4,7 @@ import '../../core/auth_session.dart';
 import '../../core/toast.dart';
 import '../../core/models.dart';
 
-/// Registers a clinician at the admin's facility. Pops with the new username on success. The same rules as the
-/// server are checked first so most mistakes never leave the browser; the server's answer is still authoritative.
+/// Register-clinician dialog that checks the server's rules up front and returns the new username.
 class RegisterClinicianDialog extends StatefulWidget {
   const RegisterClinicianDialog({super.key, required this.session});
 

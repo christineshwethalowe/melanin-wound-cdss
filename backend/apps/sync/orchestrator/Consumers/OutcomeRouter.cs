@@ -7,13 +7,7 @@ using Sync.Common.Kafka;
 
 namespace Orchestrator.Consumers;
 
-/// <summary>
-/// Makes a run's outcome durable before the consumer commits its offset (architecture §8.3, §10.3, §11):
-///   Stored / AlreadyProcessed / Superseded → nothing to do
-///   Deferred / Failed → ADVICE_DEFERRED for the device, copy to the next retry topic
-///   DeadLetter        → ADVICE_DEFERRED for the device, copy to wound-events.dlq
-/// If producing fails (Kafka down) this throws, the offset stays uncommitted, and the message is read again.
-/// </summary>
+/// <summary>Makes a run's outcome durable (retry topic, DLQ or nothing) before the offset is committed.</summary>
 public sealed class OutcomeRouter(IProducer<string, byte[]> producer, IOrchestratorStore store, ILogger<OutcomeRouter> logger)
 {
     public async Task RouteAsync(ConsumeResult<string, byte[]> source, OrchestrationOutcome outcome, CancellationToken ct)
@@ -22,8 +16,7 @@ public sealed class OutcomeRouter(IProducer<string, byte[]> producer, IOrchestra
 
         try
         {
-            // The device sees "advice deferred" instead of waiting silently (§6.1). Best effort: when the
-            // database itself is the problem, the retry still goes ahead.
+            // Tell the device advice is deferred; best effort, the retry still goes ahead if this fails.
             await store.RecordDeferredAsync(outcome.Event, ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

@@ -1,10 +1,4 @@
-# Local prototype stack (architecture §14). One machine, single Kafka broker.
-#
-#   docker compose up -d --build                       whole backend in containers
-#   docker compose up -d kafka postgres kafka-ui       infrastructure only (run services with `dotnet run`)
-#   docker compose --profile tools up -d               + Toxiproxy, OpenTelemetry, Prometheus, Grafana
-#
-# Start-up order: kafka + postgres → kafka-init (topics) + db-migrate (schemas, seed, demo users) → services.
+# Local stack: `docker compose up -d --build` for everything, add `--profile tools` for Toxiproxy and observability.
 name: melanin-wound-cdss
 
 x-backend: &backend
@@ -12,16 +6,11 @@ x-backend: &backend
     context: .
     dockerfile: backend/Dockerfile
   restart: unless-stopped
-  # The owner login below is used only by db-migrate. Every service overrides it with its own role (plan phase 9,
-  # db/migrations/_roles and grants); passwords are local-dev defaults, set real ones in .env.
-  # Pool sizes are bounded so all services together stay under PostgreSQL's 100 connections, even with the
-  # persister and relay scaled to two replicas: identity 20, gateway 30, persister 10, relay 5, orchestrator 10,
-  # housekeeping 2.
+  # Owner login is for db-migrate only; each service uses its own role, with pool sizes kept under Postgres' 100 connections.
   environment: &backend-env
-    ConnectionStrings__Postgres: "Host=postgres;Username=${POSTGRES_USER:-cdss};Password=${POSTGRES_PASSWORD:-cdss};Database=${POSTGRES_DB:-cdss}"
+    ConnectionStrings__Postgres: "Host=postgres;Username=${POSTGRES_USER:-cdss};Password=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env};Database=${POSTGRES_DB:-cdss}"
     Kafka__BootstrapServers: "kafka:9092"
-    # Traces and metrics to the collector (plan phase 11). Only used when the tools profile is up; otherwise the
-    # exporter just drops what it cannot send.
+    # Send traces and metrics to the collector; harmlessly dropped when the tools profile isn't running.
     OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4317}
   depends_on: &backend-deps
     db-migrate:
@@ -47,8 +36,7 @@ services:
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
-      # Keep the log on the kafka-data volume. Without this the image writes to /tmp/kafka-logs inside the
-      # container, and recreating the container silently drops every message not yet consumed.
+      # Keep Kafka's log on the volume so recreating the container doesn't lose unconsumed messages.
       KAFKA_LOG_DIRS: /var/lib/kafka/data
       # Demo only: replication factor 1. Do not claim durability under broker loss (§8.2).
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
@@ -66,10 +54,10 @@ services:
     image: pgvector/pgvector:pg16
     container_name: postgres
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-cdss}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cdss}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: ${POSTGRES_DB:-cdss}
     volumes:
       - postgres-data:/var/lib/postgresql/data
@@ -87,9 +75,7 @@ services:
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
     depends_on: [kafka]
 
-  # PostgreSQL in a web page, for debugging like kafka-ui (port 5432 itself is the database protocol, not HTTP):
-  # http://localhost:8082/?pgsql=postgres&username=cdss&db=cdss, then the POSTGRES_PASSWORD from .env (cdss by
-  # default). Bound to this machine only; it can change data, so never expose it.
+  # Web UI for Postgres at http://localhost:8082 (debug only, never expose it).
   adminer:
     image: adminer:4
     ports:
@@ -110,8 +96,7 @@ services:
     command:
       - |
         set -eo pipefail
-        # kafka-topics.sh warns about every topic name with a '.', even one that already exists. The §8.1 names use
-        # '.' and '-' but never '_', so they cannot collide: drop that one line, keep every other message and failure.
+        # Drop kafka-topics.sh's harmless '.' vs '_' warning but keep every other message.
         t() { /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic "$$1" --partitions "$$2" --replication-factor 1 2>&1 | { grep -v "Due to limitations in metric names" || true; }; }
         t wound-events 6
         t wound-events.persisted 6
@@ -121,8 +106,7 @@ services:
         t wound-events.dlq 1
     restart: "no"
 
-  # Applies db/migrations, the local-dev seed (facility fac-001, device dev-a41c), and demo users.
-  # Demo users are for local development only; create-clinician skips a username that already exists.
+  # Runs migrations, the dev seed and demo users (local dev only).
   db-migrate:
     <<: *backend
     build:
@@ -134,13 +118,13 @@ services:
     restart: "no"
     environment:
       <<: *backend-env
-      ServiceRoles__identity_svc: ${DB_PASSWORD_IDENTITY:-identity-local-dev}
-      ServiceRoles__gateway_svc: ${DB_PASSWORD_GATEWAY:-gateway-local-dev}
-      ServiceRoles__persister_svc: ${DB_PASSWORD_PERSISTER:-persister-local-dev}
-      ServiceRoles__relay_svc: ${DB_PASSWORD_RELAY:-relay-local-dev}
-      ServiceRoles__orchestrator_svc: ${DB_PASSWORD_ORCHESTRATOR:-orchestrator-local-dev}
-      ServiceRoles__rag_svc: ${DB_PASSWORD_RAG:-rag-local-dev}
-      ServiceRoles__housekeeping_svc: ${DB_PASSWORD_HOUSEKEEPING:-housekeeping-local-dev}
+      ServiceRoles__identity_svc: ${DB_PASSWORD_IDENTITY:?set DB_PASSWORD_IDENTITY in .env}
+      ServiceRoles__gateway_svc: ${DB_PASSWORD_GATEWAY:?set DB_PASSWORD_GATEWAY in .env}
+      ServiceRoles__persister_svc: ${DB_PASSWORD_PERSISTER:?set DB_PASSWORD_PERSISTER in .env}
+      ServiceRoles__relay_svc: ${DB_PASSWORD_RELAY:?set DB_PASSWORD_RELAY in .env}
+      ServiceRoles__orchestrator_svc: ${DB_PASSWORD_ORCHESTRATOR:?set DB_PASSWORD_ORCHESTRATOR in .env}
+      ServiceRoles__rag_svc: ${DB_PASSWORD_RAG:?set DB_PASSWORD_RAG in .env}
+      ServiceRoles__housekeeping_svc: ${DB_PASSWORD_HOUSEKEEPING:?set DB_PASSWORD_HOUSEKEEPING in .env}
     depends_on:
       postgres:
         condition: service_healthy
@@ -157,7 +141,7 @@ services:
     restart: "no"
     environment:
       <<: *backend-env
-      ConnectionStrings__Postgres: "Host=postgres;Database=${POSTGRES_DB:-cdss};Username=identity_svc;Password=${DB_PASSWORD_IDENTITY:-identity-local-dev};Maximum Pool Size=20"
+      ConnectionStrings__Postgres: "Host=postgres;Database=${POSTGRES_DB:-cdss};Username=identity_svc;Password=${DB_PASSWORD_IDENTITY:?set DB_PASSWORD_IDENTITY in .env};Maximum Pool Size=20"
     depends_on:
       db-migrate:
         condition: service_completed_successfully
@@ -170,8 +154,7 @@ services:
 
   # ---- Member 4 backend units (§4) ------------------------------------------------------------
 
-  # The only public port (ADR 0004). Routes /v1/auth, /v1/admin, /.well-known -> identity-service and
-  # /v1/sync, /v1/patients, /v1/figures, /v1/baseline, /health -> sync-gateway.
+  # The only public port; routes auth/admin to identity and everything else to the sync gateway.
   api-gateway:
     <<: *backend
     image: melanin-wound-cdss/api-gateway
@@ -191,9 +174,7 @@ services:
       - identity-service
       - sync-gateway
 
-  # Facility admin dashboard (architecture §2.1, §4; ADR 0005), Flutter Web on nginx: http://localhost:3001.
-  # The browser calls the api-gateway directly, so API_BASE_URL is the gateway as the browser sees it; port 3001 is the
-  # origin the gateway's CORS policy allows (Cors:AllowedOrigins). Admins only, e.g. admin.demo.
+  # Admin dashboard at http://localhost:3001; the browser calls the API gateway directly.
   admin-dashboard:
     image: melanin-wound-cdss/admin-dashboard
     build:
@@ -206,8 +187,7 @@ services:
     depends_on:
       - api-gateway
 
-  # Issues and signs every token (ADR 0003); other services fetch its public keys from /.well-known/jwks.json.
-  # Reached only through the api-gateway.
+  # Issues and signs every token; reached only through the API gateway.
   identity-service:
     <<: *backend
     image: melanin-wound-cdss/identity-service
@@ -218,7 +198,7 @@ services:
         ENTRY: IdentityService.dll
     environment:
       <<: *backend-env
-      ConnectionStrings__Postgres: "Host=postgres;Database=${POSTGRES_DB:-cdss};Username=identity_svc;Password=${DB_PASSWORD_IDENTITY:-identity-local-dev};Maximum Pool Size=20"
+      ConnectionStrings__Postgres: "Host=postgres;Database=${POSTGRES_DB:-cdss};Username=identity_svc;Password=${DB_PASSWORD_IDENTITY:?set DB_PASSWORD_IDENTITY in .env};Maximum Pool Size=20"
       # Local development values. Without Jwt__SigningKeyPem a key is generated at start-up (restart = devices refresh).
       Jwt__SigningKeyPem: ${Jwt__SigningKeyPem:-}
       Secrets__EncryptionKey: ${Secrets__EncryptionKey:-local-dev-only-encryption-key-change-me-0123456}
@@ -236,7 +216,7 @@ services:
         ENTRY: SyncGateway.dll
     environment:
       <<: *backend-env
-      ConnectionStrings__Postgres: "Host=postgres;Database=${POSTGRES_DB:-cdss};Username=gateway_svc;Password=${DB_PASSWORD_GATEWAY:-gateway-local-dev};Maximum Pool Size=30"
+      ConnectionStrings__Postgres: "Host=postgres;Database=${POSTGRES_DB:-cdss};Username=gateway_svc;Password=${DB_PASSWORD_GATEWAY:?set DB_PASSWORD_GATEWAY in .env};Maximum Pool Size=30"
       Jwt__MetadataAddress: "http://identity-service:8080/.well-known/openid-configuration"
       # Figures proxy (§10.4) and REST baseline (§13.1). Stub by default; see the recommendation-service entry.
       RecommendationService__BaseUrl: ${RECOMMENDATION_SERVICE_URL:-http://rag-stub:8080}
@@ -256,7 +236,7 @@ services:
         ENTRY: IngestPersister.dll
     environment:
       <<: *backend-env
-      ConnectionStrings__Postgres: "Host=postgres;Database=${POSTGRES_DB:-cdss};Username=persister_svc;Password=${DB_PASSWORD_PERSISTER:-persister-local-dev};Maximum Pool Size=10"
+      ConnectionStrings__Postgres: "Host=postgres;Database=${POSTGRES_DB:-cdss};Username=persister_svc;Password=${DB_PASSWORD_PERSISTER:?set DB_PASSWORD_PERSISTER in .env};Maximum Pool Size=10"
       Ablation__Enabled: ${ABLATION:-false}   # §13 duplicate ablation, evaluation only (tests/evaluation)
 
   outbox-relay:
@@ -269,11 +249,9 @@ services:
         ENTRY: OutboxRelay.dll
     environment:
       <<: *backend-env
-      ConnectionStrings__Postgres: "Host=postgres;Database=${POSTGRES_DB:-cdss};Username=relay_svc;Password=${DB_PASSWORD_RELAY:-relay-local-dev};Maximum Pool Size=5"
+      ConnectionStrings__Postgres: "Host=postgres;Database=${POSTGRES_DB:-cdss};Username=relay_svc;Password=${DB_PASSWORD_RELAY:?set DB_PASSWORD_RELAY in .env};Maximum Pool Size=5"
 
-  # Outbox cleanup, change-log archival and inbox retention (§9.4). One cycle every 10 minutes; one instance is
-  # enough (an advisory lock keeps extra replicas idle). Run a cycle by hand:
-  #   docker compose run --rm housekeeping run-once
+  # Cleanup every 10 minutes; run one by hand with `docker compose run --rm housekeeping run-once`.
   housekeeping:
     <<: *backend
     image: melanin-wound-cdss/housekeeping
@@ -284,7 +262,7 @@ services:
         ENTRY: Housekeeping.dll
     environment:
       <<: *backend-env
-      ConnectionStrings__Postgres: "Host=postgres;Database=${POSTGRES_DB:-cdss};Username=housekeeping_svc;Password=${DB_PASSWORD_HOUSEKEEPING:-housekeeping-local-dev};Maximum Pool Size=2"
+      ConnectionStrings__Postgres: "Host=postgres;Database=${POSTGRES_DB:-cdss};Username=housekeeping_svc;Password=${DB_PASSWORD_HOUSEKEEPING:?set DB_PASSWORD_HOUSEKEEPING in .env};Maximum Pool Size=2"
 
   orchestrator:
     <<: *backend
@@ -296,7 +274,7 @@ services:
         ENTRY: Orchestrator.dll
     environment:
       <<: *backend-env
-      ConnectionStrings__Postgres: "Host=postgres;Database=${POSTGRES_DB:-cdss};Username=orchestrator_svc;Password=${DB_PASSWORD_ORCHESTRATOR:-orchestrator-local-dev};Maximum Pool Size=10"
+      ConnectionStrings__Postgres: "Host=postgres;Database=${POSTGRES_DB:-cdss};Username=orchestrator_svc;Password=${DB_PASSWORD_ORCHESTRATOR:?set DB_PASSWORD_ORCHESTRATOR in .env};Maximum Pool Size=10"
       RecommendationService__BaseUrl: ${RECOMMENDATION_SERVICE_URL:-http://rag-stub:8080}
       # Messages handled at once, across partitions (each partition stays in order). 1 = one at a time.
       Ablation__Enabled: ${ABLATION:-false}   # §13 duplicate ablation, evaluation only (tests/evaluation)
@@ -305,11 +283,7 @@ services:
       Retry__FirstDelaySeconds: ${RETRY_FIRST_DELAY_SECONDS:-30}
       Retry__SecondDelaySeconds: ${RETRY_SECOND_DELAY_SECONDS:-300}
 
-  # Member 3's Recommendation Service (§10), built from backend/apps/recommendation-service. Profile "rag", so it
-  # only runs when asked. To use it instead of the stub (orchestrator, figures proxy and baseline all follow):
-  #   RECOMMENDATION_SERVICE_URL=http://recommendation-service:8080 docker compose --profile rag up -d --build
-  # It logs in to PostgreSQL as rag_svc, which sees the rag schema only (§10.5, plan phase 9).
-  # Guide: docs/integration/recommendation-service.md
+  # Member 3's real Recommendation Service, only with `--profile rag` and RECOMMENDATION_SERVICE_URL set (see docs/integration).
   recommendation-service:
     <<: *backend
     image: melanin-wound-cdss/recommendation-service
@@ -323,7 +297,7 @@ services:
       - "5081:8080"
     environment:
       <<: *backend-env
-      ConnectionStrings__Postgres: "Host=postgres;Database=${POSTGRES_DB:-cdss};Username=rag_svc;Password=${DB_PASSWORD_RAG:-rag-local-dev};Maximum Pool Size=20"
+      ConnectionStrings__Postgres: "Host=postgres;Database=${POSTGRES_DB:-cdss};Username=rag_svc;Password=${DB_PASSWORD_RAG:?set DB_PASSWORD_RAG in .env};Maximum Pool Size=20"
     depends_on:
       db-migrate:
         condition: service_completed_successfully
@@ -343,8 +317,7 @@ services:
       STUB_DELAY_MS: ${STUB_DELAY_MS:-0}
       STUB_FAIL_MODE: ${STUB_FAIL_MODE:-none}
 
-  # ---- Optional: fault injection and observability ----------------------------------------------
-  # These mount config files from infra/, so Docker Desktop must be allowed to share this drive.
+  # ---- Optional: fault injection and observability (needs Docker drive sharing) ----
 
   toxiproxy:
     image: ghcr.io/shopify/toxiproxy:2.9.0
@@ -356,8 +329,7 @@ services:
     volumes:
       - ./infra/toxiproxy:/config:ro
 
-  # Observability (plan phase 11): services → otel-collector → Jaeger (traces) and Prometheus → Grafana (metrics).
-  #   Grafana http://localhost:3000 · Jaeger http://localhost:16686 · Prometheus http://localhost:9090
+  # Observability: Grafana :3000, Jaeger :16686, Prometheus :9090.
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.111.0
     profiles: [tools]
@@ -370,12 +342,15 @@ services:
     depends_on: [jaeger]
 
   jaeger:
-    image: jaegertracing/all-in-one:1.76.0
+    # Jaeger v2 (v1 is end-of-life): OTLP in, traces in memory. Config: jaeger_config below.
+    image: jaegertracing/jaeger:2.22.0
     profiles: [tools]
+    command: ["--config=/etc/jaeger/config.yaml"]
     ports:
       - "16686:16686"          # UI
-    environment:
-      COLLECTOR_OTLP_ENABLED: "true"
+    configs:
+      - source: jaeger_config
+        target: /etc/jaeger/config.yaml
 
   # Consumer-group lag per partition for Prometheus (§13).
   kafka-exporter:
@@ -396,7 +371,7 @@ services:
       - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
 
   grafana:
-    image: grafana/grafana:11.3.0
+    image: grafana/grafana:11.6.16      # 11.3.0 logged "plugin xychart is already registered" at every start
     profiles: [tools]
     ports:
       - "3000:3000"
@@ -407,6 +382,53 @@ services:
       - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
     depends_on: [prometheus]
+
+# Inline config so it doesn't depend on host file sharing.
+configs:
+  jaeger_config:
+    # Jaeger trimmed to OTLP in, in-memory storage and the UI ($$ is a literal $ for Compose).
+    content: |
+      service:
+        extensions: [jaeger_storage, jaeger_query, healthcheckv2]
+        pipelines:
+          traces:
+            receivers: [otlp]
+            processors: [batch]
+            exporters: [jaeger_storage_exporter]
+        telemetry:
+          resource:
+            attributes:
+              - name: service.name
+                value: jaeger
+          logs:
+            level: info
+      extensions:
+        jaeger_query:
+          storage:
+            traces: memstore
+          http:
+            endpoint: $${env:HOSTNAME}:16686
+          grpc:
+            endpoint: $${env:HOSTNAME}:16685
+        jaeger_storage:
+          backends:
+            memstore:
+              memory:
+                max_traces: 100000
+        healthcheckv2:
+          use_v2: true
+          http:
+            endpoint: $${env:HOSTNAME}:13133
+      receivers:
+        otlp:
+          protocols:
+            grpc:
+              endpoint: 0.0.0.0:4317
+      processors:
+        batch:
+      exporters:
+        jaeger_storage_exporter:
+          trace_storage: memstore
 
 volumes:
   kafka-data:

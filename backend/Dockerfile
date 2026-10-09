@@ -1,8 +1,4 @@
-# One image recipe for every .NET backend unit (architecture §4, §14).
-# Build from the repository root, choosing the project and its entry assembly:
-#   docker build -f backend/Dockerfile --build-arg PROJECT=backend/apps/sync/sync-gateway/SyncGateway.csproj \
-#                --build-arg ENTRY=SyncGateway.dll -t cdss/sync-gateway .
-# docker-compose.yml does this for each service.
+# One image for every .NET service; pick it with --build-arg PROJECT=<csproj> --build-arg ENTRY=<dll> (see docker-compose.yml).
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 ARG PROJECT
@@ -22,8 +18,9 @@ COPY --from=build /app .
 # The db-migrator looks for db/migrations next to it; other services ignore this folder.
 COPY db/ db/
 ARG ENTRY
+# Use the base image's port 8080 setting; ASPNETCORE_URLS would override it and warn on every start.
 ENV ENTRY_DLL=${ENTRY} \
-    ASPNETCORE_URLS=http://+:8080 \
+    ASPNETCORE_HTTP_PORTS=8080 \
     DOTNET_ENVIRONMENT=Production
 USER $APP_UID
 ENTRYPOINT ["sh", "-c", "exec dotnet \"$ENTRY_DLL\" \"$@\"", "--"]

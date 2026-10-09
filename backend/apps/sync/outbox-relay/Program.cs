@@ -5,8 +5,7 @@ using Sync.Common.Kafka;
 using Sync.Common.Persistence;
 using Sync.Common.Telemetry;
 
-// Outbox relay (architecture §4): publishes messaging.outbox rows to Kafka.
-// Can run inside the persister's process for the prototype; kept separate so it can be split out.
+// Outbox relay: publishes outbox rows to Kafka.
 var builder = Host.CreateApplicationBuilder(args);
 builder.AddSyncTelemetry("outbox-relay");
 

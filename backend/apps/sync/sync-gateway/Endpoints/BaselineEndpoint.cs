@@ -9,16 +9,7 @@ using SyncGateway.Validation;
 
 namespace SyncGateway.Endpoints;
 
-/// <summary>
-/// POST /v1/baseline/assessments: the plain REST comparison for the evaluation (architecture §13.1, plan phase 8).
-/// One request does everything the event-driven path spreads over Kafka, the persister and the orchestrator:
-/// validate, write PostgreSQL, build the same request, call the same Recommendation Service, validate the answer,
-/// store it, reply. The device waits for all of it.
-///
-/// Deliberately naive, as the comparison needs: no idempotency (a retried request is stored again), no outbox,
-/// no retries, no provenance. A failed call leaves the assessment stored without advice. Writes the baseline
-/// schema only, never the clinical record.
-/// </summary>
+/// <summary>Plain REST baseline for the evaluation: does everything in one request, deliberately without idempotency or retries.</summary>
 public static class BaselineEndpoint
 {
     public const string RecommendationClient = "recommendation-service";

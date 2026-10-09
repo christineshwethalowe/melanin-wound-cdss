@@ -1,15 +1,4 @@
-"""
-Checks the running Docker stack against the backend architecture (docs/architecture/backend-architecture-v2.0.pdf
-plus docs/architecture/v2.1-changes.md), section by section, including the failure cases from §11.
-
-DISRUPTIVE: this script stops and restarts Kafka and the ingest persister, replays wound-events from offset 0,
-scales the persister and outbox relay to two replicas, and writes a poison message to wound-events. Everything is
-put back at the end. Local Docker stack only (docker compose up -d --build), never a shared environment.
-
-    python tests/integration/e2e_architecture.py
-
-Results print as PASS / FAIL, plus GAP for parts of the architecture that are not built yet (expected).
-"""
+"""DISRUPTIVE: checks the running stack against the architecture, including failure cases (local Docker only)."""
 import base64
 import gzip
 import hashlib
@@ -253,8 +242,7 @@ check("no event stored twice (unique event_id)",
       sql("select count(*) from (select event_id from clinical.wound_assessment group by 1 having count(*) > 1) x") == "0")
 check("no (assessment_id, revision) stored twice",
       sql("select count(*) from (select 1 from clinical.wound_assessment group by assessment_id, revision having count(*) > 1) x") == "0")
-# Housekeeping (§9.4) archives change-log rows every cursor has passed and deletes outbox rows an hour after
-# publishing, so the change-log row may be in the archive and the outbox row is only checked for recent assessments.
+# Housekeeping may have archived the change-log row or deleted the outbox row, so check both places.
 check("every stored assessment has PERSISTED provenance, a change-log row and an outbox row (one transaction)",
       sql("""select count(*) from clinical.wound_assessment wa
              where not exists (select 1 from audit.provenance p where p.event_id = wa.event_id and p.stage = 'PERSISTED')

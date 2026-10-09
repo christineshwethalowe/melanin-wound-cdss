@@ -8,13 +8,7 @@ using OpenTelemetry.Trace;
 
 namespace Sync.Common.Telemetry;
 
-/// <summary>
-/// OpenTelemetry for every service (architecture §13, plan phase 11): traces and metrics over OTLP to the collector
-/// (infra/otel-collector), which sends traces to Jaeger and metrics to Prometheus → Grafana.
-///
-/// Exporting is on only when OTEL_EXPORTER_OTLP_ENDPOINT is set (docker-compose sets it), so a plain `dotnet run`
-/// without the tools profile exports nothing. Web services add ASP.NET Core instrumentation on the returned builder.
-/// </summary>
+/// <summary>OpenTelemetry setup; exports only when OTEL_EXPORTER_OTLP_ENDPOINT is set.</summary>
 public static class TelemetrySetup
 {
     public static OpenTelemetryBuilder AddSyncTelemetry(this IHostApplicationBuilder builder, string serviceName)

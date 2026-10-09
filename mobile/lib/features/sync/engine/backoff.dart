@@ -1,7 +1,6 @@
 import 'dart:math';
 
-/// Retry delay (architecture §6.2): start at 2 s, double up to 5 min, full jitter, reset on success. A Retry-After from
-/// the server (429, 503) is honoured when it asks for longer.
+/// Retry delay: 2 s doubling to 5 min with full jitter, reset on success; longer Retry-After wins.
 class Backoff {
   Backoff([Random? random]) : _random = random ?? Random();
 

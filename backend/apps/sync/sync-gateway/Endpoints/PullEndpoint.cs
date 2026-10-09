@@ -6,19 +6,13 @@ namespace SyncGateway.Endpoints;
 
 public sealed record ChangeDto(long Seq, string Type, Guid AssessmentId, int Revision, string? Mode, JsonElement? Recommendation);
 
-/// <summary>
-/// GET /v1/sync/changes?cursor=&amp;limit= (architecture §7.2). The device upserts by
-/// (assessmentId, revision, type), so re-sending changes is harmless.
-/// </summary>
+/// <summary>GET /v1/sync/changes: returns changes after the cursor; re-sends are harmless.</summary>
 public static class PullEndpoint
 {
     public const int DefaultLimit = 100;
     public const int MaxLimit = 500;
 
-    /// <summary>
-    /// Sequence numbers can commit out of order, so a plain "after cursor" read could miss a row forever.
-    /// Everything created in this window is re-sent regardless of its sequence number.
-    /// </summary>
+    /// <summary>Rows can commit out of order, so recent changes in this window are re-sent regardless of cursor.</summary>
     public static readonly TimeSpan ResendWindow = TimeSpan.FromSeconds(60);
 
     public static RouteGroupBuilder MapPullEndpoint(this RouteGroupBuilder group)
@@ -45,9 +39,7 @@ public static class PullEndpoint
                 await save.ExecuteNonQueryAsync(ct);
             }
 
-            // (a) What comes after the cursor. Only these rows decide nextCursor and hasMore, so paging always moves
-            // forward. (Mixing the re-send window into the same LIMIT stalled the cursor under load: with more than
-            // `limit` recent changes, every page was filled with re-sent rows at or below the cursor.)
+            // (a) Rows after the cursor; only these drive nextCursor and hasMore so paging always moves forward.
             var fresh = await ReadChangesAsync(conn, """
                 WHERE cl.facility_id = @f AND cl.server_seq > @c
                 ORDER BY cl.server_seq
@@ -56,9 +48,7 @@ public static class PullEndpoint
             var hasMore = fresh.Count > take;
             if (hasMore) fresh.RemoveAt(fresh.Count - 1);
 
-            // (b) The out-of-order guard: recent changes at or below the cursor are sent again, at most `limit` of
-            // them, nearest the cursor first (that is where a late commit lands). The device upserts, so repeats
-            // are harmless, and they never affect paging.
+            // (b) Re-send up to `limit` recent rows at or below the cursor in case they committed late; the device upserts.
             var resent = await ReadChangesAsync(conn, """
                 WHERE cl.facility_id = @f AND cl.server_seq <= @c AND cl.created_at > now() - @w
                 ORDER BY cl.server_seq DESC

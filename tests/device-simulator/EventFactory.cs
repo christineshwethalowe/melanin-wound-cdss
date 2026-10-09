@@ -3,11 +3,7 @@ using System.Text.Json.Nodes;
 
 namespace DeviceSimulator;
 
-/// <summary>
-/// Synthetic Wound Events (§5, §13.1): valid against contracts/wound-event.schema.json, client-generated UUIDv7 ids,
-/// a few wounds per device so healing history builds up, and an occasional edit (same assessment, revision + 1).
-/// Analytics only, no identifiers beyond the pseudonymous patientRef.
-/// </summary>
+/// <summary>Generates valid synthetic wound events, with a few wounds per device and occasional edits.</summary>
 public sealed class EventFactory(string deviceId, string facilityId, Random random, double editRate)
 {
     private static readonly string[] TriState = ["present", "absent", "not_recorded"];

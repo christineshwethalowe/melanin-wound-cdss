@@ -1,10 +1,4 @@
-"""
-Plan phase 9 (architecture §9.4, §12): every service logs in with its own least-privilege database role.
-Connects as each role and tries what that role must not be able to do. The rest of the suites passing on the
-Docker stack (where every service already runs under its role) shows the grants are also sufficient.
-
-    python tests/integration/e2e_db_roles.py
-"""
+"""Logs in as each service's database role and checks it can't do what it shouldn't."""
 import subprocess
 import sys
 

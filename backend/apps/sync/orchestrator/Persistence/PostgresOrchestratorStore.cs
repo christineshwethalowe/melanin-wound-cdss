@@ -115,8 +115,7 @@ public sealed class PostgresOrchestratorStore(NpgsqlDataSource db, AblationOptio
         await using var tx = await conn.BeginTransactionAsync(ct);
         await AdvisoryLock.AcquireForAssessmentAsync(conn, tx, evt.AssessmentId, ct);
 
-        // §13 ablation: every recommendation the workflow would store, with no unique constraint. The real insert
-        // below still keeps one per (assessment, revision).
+        // Ablation: log every recommendation without the unique constraint; the real insert still keeps one.
         if (ablation.Enabled)
             await ExecAsync(conn, tx, """
                 INSERT INTO ablation.recommendation (event_id, assessment_id, revision) VALUES (@e, @a, @r)

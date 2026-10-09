@@ -17,16 +17,7 @@ class SyncStatus {
       SyncStatus(running: running ?? this.running, last: last ?? this.last, lastRunAt: lastRunAt ?? this.lastRunAt);
 }
 
-/// When to sync (architecture §6.2). The engine decides how; this decides when:
-///
-/// - connectivity regained, and the app coming back to the foreground;
-/// - two seconds after a save (debounced, so a burst of saves is one run);
-/// - pull-to-refresh / "sync now" (ignores the backoff window);
-/// - every [periodic] while the app is open (Android limits background work to about every 15 minutes, so the
-///   foreground triggers do most of the work, §6.2);
-/// - when the engine backed off, at the time it said to retry.
-///
-/// Takes the sync function rather than the engine, so its timing can be tested on its own.
+/// Decides when to sync: on reconnect, resume, after a save, pull-to-refresh, a periodic timer and after backoff.
 class SyncScheduler {
   SyncScheduler(this._sync, {Stream<bool>? online, this.periodic = const Duration(minutes: 5), DateTime Function()? clock})
       : _online = online,
@@ -67,17 +58,18 @@ class SyncScheduler {
   /// Pull-to-refresh and the "sync now" button: runs now, even inside a backoff window.
   Future<SyncReport> syncNow() => _run('manual', force: true);
 
+  /// Never throws, since triggers are timers and streams; a failed run just shows as offline.
   Future<SyncReport> _run(String reason, {bool force = false}) async {
     status.value = status.value.copyWith(running: true);
+    SyncReport report;
     try {
-      final report = await _sync(force: force);
-      status.value = SyncStatus(running: false, last: report, lastRunAt: _now());
-      _scheduleRetry(report);
-      return report;
+      report = await _sync(force: force);
     } catch (e) {
-      status.value = status.value.copyWith(running: false);
-      rethrow;
+      report = SyncReport(SyncOutcome.offline, detail: 'sync failed: $e');
     }
+    status.value = SyncStatus(running: false, last: report, lastRunAt: _now());
+    _scheduleRetry(report);
+    return report;
   }
 
   void _scheduleRetry(SyncReport report) {

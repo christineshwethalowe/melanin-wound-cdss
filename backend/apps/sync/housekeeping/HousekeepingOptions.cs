@@ -11,17 +11,10 @@ public sealed class HousekeepingOptions
     /// <summary>A published outbox row is kept this long (for debugging), then deleted. Unpublished rows never are.</summary>
     public TimeSpan OutboxRetention { get; set; } = TimeSpan.FromHours(1);
 
-    /// <summary>
-    /// A change-log row must be at least this old before it can be archived, even once every device cursor has passed
-    /// it. Far above pull's 60-second re-send window (§7.2), so an out-of-order commit is never archived early.
-    /// </summary>
+    /// <summary>Minimum age before a change-log row can be archived, well above pull's 60 s re-send window.</summary>
     public TimeSpan ChangeLogMargin { get; set; } = TimeSpan.FromHours(24);
 
-    /// <summary>
-    /// Minimum age of an inbox row before it is deleted. The effective value is never shorter than the longest
-    /// retention of the topics its consumers read plus <see cref="InboxSafetyMargin"/>: while Kafka can still redeliver
-    /// a message, the inbox row that recognises it as a repeat must exist (<see cref="RetentionPolicy"/>).
-    /// </summary>
+    /// <summary>Minimum age before an inbox row is deleted; never shorter than Kafka could still redeliver.</summary>
     public TimeSpan InboxRetention { get; set; } = TimeSpan.FromDays(8);
 
     public TimeSpan InboxSafetyMargin { get; set; } = TimeSpan.FromDays(1);

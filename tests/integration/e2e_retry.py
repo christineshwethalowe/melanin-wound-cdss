@@ -1,13 +1,4 @@
-"""
-Plan phase 7 (architecture §8.3, §10.3, §11): retry topics without head-of-line blocking.
-A deferred event is retried after its delay and recovers; new events are not held up meanwhile; an event that
-keeps failing goes wound-events.persisted → retry.30s → retry.5m → dlq.
-
-DISRUPTIVE: restarts the orchestrator with short retry delays (20 s / 30 s) and the rag-stub with failure modes.
-Both are put back at the end. Local Docker stack only. Takes about two minutes.
-
-    python tests/integration/e2e_retry.py
-"""
+"""DISRUPTIVE: retries recover without blocking new events, and persistent failures end in the DLQ (about two minutes)."""
 import os
 import secrets
 import subprocess
@@ -100,8 +91,7 @@ try:
                     where assessment_id in ('{a1}', '{a2}')""")
     check("... the newer event got its advice first", order == f"{a2},{a1}", order)
     check("... and the copy went through wound-events.retry.30s", messages_for("wound-events.retry.30s", e1["eventId"]))
-    # Measured in the database (ADVICE_DEFERRED is written just before the retry copy is produced), not by when
-    # this script happened to notice the retry message.
+    # Measured from the database, not from when this script spotted the retry message.
     waited = float(sql(f"""select extract(epoch from r.created_at - c.created_at) from sync.change_log c
                            join clinical.recommendation r using (assessment_id, revision)
                            where c.assessment_id = '{a1}' and c.change_type = 'ADVICE_DEFERRED'"""))

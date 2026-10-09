@@ -1,11 +1,4 @@
-"""
-Admin dashboard sessions (ADR 0005): a browser logs in as client "admin-dashboard", with no device, admins only.
-Its tokens work on the admin API but are refused by the Sync Gateway (different audience).
-
-Needs the stack up (docker compose up -d --build), everything reached through the API gateway (8080).
-
-    python tests/integration/e2e_dashboard_client.py
-"""
+"""Dashboard tokens work on the admin API but are refused by the Sync Gateway."""
 import secrets
 import sys
 

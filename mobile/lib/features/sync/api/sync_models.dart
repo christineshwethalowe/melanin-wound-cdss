@@ -1,6 +1,7 @@
-/// Wire types of the sync protocol (architecture §7). Mirrors contracts/auth.schema.json and
-/// contracts/sync-changes.schema.json.
+/// Sync protocol wire types, mirroring the auth and sync-changes JSON schemas.
 library;
+
+import 'dart:convert';
 
 /// §7.1: one result per pushed event. DUPLICATE is treated exactly like ACCEPTED.
 class PushEventResult {
@@ -14,8 +15,7 @@ class PushEventResult {
       PushEventResult(j['eventId'] as String, j['status'] as String, j['code'] as String?);
 }
 
-/// §7.2: one change after the device's cursor. Upserted by (assessmentId, revision, type), so re-sent changes
-/// are harmless.
+/// One change after the cursor; upserted by (assessmentId, revision, type) so repeats are harmless.
 class SyncChange {
   const SyncChange({
     required this.seq,
@@ -23,7 +23,7 @@ class SyncChange {
     required this.assessmentId,
     required this.revision,
     this.mode,
-    this.recommendation,
+    this.recommendationJson,
   });
 
   final int seq;
@@ -31,16 +31,21 @@ class SyncChange {
   final String assessmentId;
   final int revision;
   final String? mode;
-  final Map<String, dynamic>? recommendation;
 
-  factory SyncChange.fromJson(Map<String, dynamic> j) => SyncChange(
-        seq: j['seq'] as int,
-        type: j['type'] as String,
-        assessmentId: j['assessmentId'] as String,
-        revision: j['revision'] as int,
-        mode: j['mode'] as String?,
-        recommendation: j['recommendation'] as Map<String, dynamic>?,
-      );
+  /// The advice (RECOMMENDATION_READY) as JSON text, ready to store: encoded once, with the page, off the UI isolate.
+  final String? recommendationJson;
+
+  factory SyncChange.fromJson(Map<String, dynamic> j) {
+    final recommendation = j['recommendation'] as Map<String, dynamic>?;
+    return SyncChange(
+      seq: j['seq'] as int,
+      type: j['type'] as String,
+      assessmentId: j['assessmentId'] as String,
+      revision: j['revision'] as int,
+      mode: j['mode'] as String? ?? recommendation?['mode'] as String?,
+      recommendationJson: recommendation == null ? null : jsonEncode(recommendation),
+    );
+  }
 }
 
 class PullPage {

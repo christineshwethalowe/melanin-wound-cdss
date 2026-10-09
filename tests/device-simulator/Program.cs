@@ -3,13 +3,7 @@ using System.Text;
 using System.Text.Json;
 using DeviceSimulator;
 
-// Device simulator (architecture §13.1, plan phase 10): 1–100 simulated phones with a real queue, leases, login,
-// push and pull, against the event-driven path or the REST baseline. Writes one CSV row per event and a summary.
-// Run it on the same host as the stack, so device and server clocks agree for the latency figures (§13).
-//
-//   dotnet run --project tests/device-simulator -- --devices 10 --events 20
-//   dotnet run --project tests/device-simulator -- --devices 10 --events 20 --mode baseline
-//   dotnet run --project tests/device-simulator -- --gateway http://localhost:18080   (through Toxiproxy)
+// Device simulator for 1-100 phones; e.g. `dotnet run --project tests/device-simulator -- --devices 10 --events 20 [--mode baseline]`.
 var options = SimOptions.Parse(args);
 var clock = TimeProvider.System;
 
@@ -27,8 +21,7 @@ using var setupHttp = new HttpClient { BaseAddress = new Uri(options.SetupGatewa
 Console.WriteLine($"Run {options.RunId}: {options.Devices} devices × {options.EventsPerDevice} events, " +
                   $"{options.Mode}, gateway {options.Gateway}");
 
-// One clinician per phone, registered through the real admin API (unless --shared-user). The admin's facility
-// is where the devices register on first login.
+// Register one clinician per phone through the admin API unless --shared-user is set.
 if (options.SharedUsername is null)
 {
     var admin = new GatewayClient(setupHttp, $"sim-{options.RunId}-admin", options.AdminUsername, options.AdminPassword);

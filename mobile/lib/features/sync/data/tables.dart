@@ -1,14 +1,9 @@
 import 'package:drift/drift.dart';
 
-/// Record lifecycle on the device (architecture §6.1):
-/// pending → inFlight → accepted (or rejected) → adviceDeferred → complete.
-/// "accepted" means durable in Kafka (what "synced" means); "complete" means advice has been delivered;
-/// "superseded" means a newer revision of the same assessment got the advice instead. Rejected rows stay
-/// visible and are never retried automatically.
+/// Device record lifecycle: pending → inFlight → accepted/rejected → adviceDeferred → complete (or superseded).
 enum QueueStatus { pending, inFlight, accepted, rejected, adviceDeferred, complete, superseded }
 
-/// The offline queue (§6). One row per event; each revision is a separate row. Written only through
-/// QueueRepository, and every write commits before the UI shows "saved".
+/// The offline queue: one row per event revision, written only through QueueRepository.
 @DataClassName('QueuedEvent')
 @TableIndex(name: 'ix_queue_status_next', columns: {#status, #nextAttemptAt})
 @TableIndex(name: 'ix_queue_assessment', columns: {#assessmentId, #revision})
@@ -56,8 +51,7 @@ class RecommendationLocal extends Table {
   Set<Column> get primaryKey => {assessmentId, revision};
 }
 
-/// Cache of guideline figures (§10.4) so they survive an app restart without a re-fetch. A corpus version is a
-/// frozen snapshot, so a cached figure never goes stale.
+/// Cached guideline figures, kept across restarts; they never go stale.
 class FiguresLocal extends Table {
   TextColumn get corpusVersion => text()();
   TextColumn get figureId => text()();
@@ -70,6 +64,17 @@ class FiguresLocal extends Table {
 
   @override
   Set<Column> get primaryKey => {corpusVersion, figureId};
+}
+
+/// Patients on this phone: pseudonymous ref plus a local label; [aliasSyncedAt] is null until the label reaches the server.
+class PatientLocal extends Table {
+  TextColumn get patientRef => text()();
+  TextColumn get displayAlias => text()();
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get aliasSyncedAt => dateTime().nullable()();
+
+  @override
+  Set<Column> get primaryKey => {patientRef};
 }
 
 /// Small key/value table: server_cursor, last_success_at, device_id, the sync lease (see SyncStateKeys).

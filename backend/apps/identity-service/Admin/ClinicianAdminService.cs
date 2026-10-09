@@ -12,10 +12,7 @@ public sealed record ClinicianSummary(Guid ClinicianId, string Username, string 
 public sealed record AuthAuditEntry(long Id, DateTime RecordedAt, string Action, bool Success, string Username,
     string? ReasonCode, string? DeviceId, string? ActorUsername);
 
-/// <summary>
-/// Clinician management for facility admins (build step 2: "a clinician can register"). Every operation is
-/// scoped to the admin's own facility and written to audit.auth_audit with the admin as the actor.
-/// </summary>
+/// <summary>Clinician management for facility admins, scoped to their facility and audited.</summary>
 public sealed partial class ClinicianAdminService(NpgsqlDataSource db, PasswordHasher hasher)
 {
     public static readonly string[] Roles = ["nurse", "wound_specialist", "admin"];
@@ -42,10 +39,12 @@ public sealed partial class ClinicianAdminService(NpgsqlDataSource db, PasswordH
         Guid clinicianId;
         try
         {
+            // ON CONFLICT so a taken username just returns no row instead of logging a unique-violation error.
             await using var insert = new NpgsqlCommand("""
                 WITH c AS (
                     INSERT INTO clinical.clinician (username, full_name, role, facility_id)
                     VALUES (@u, @n, @r, @f)
+                    ON CONFLICT (username) DO NOTHING
                     RETURNING clinician_id
                 )
                 INSERT INTO clinical.clinician_credential (clinician_id, password_hash, password_salt)
@@ -58,10 +57,12 @@ public sealed partial class ClinicianAdminService(NpgsqlDataSource db, PasswordH
             insert.Parameters.AddWithValue("f", facilityId);
             insert.Parameters.AddWithValue("h", Convert.ToBase64String(hash));
             insert.Parameters.AddWithValue("s", salt);
-            clinicianId = (Guid)(await insert.ExecuteScalarAsync(ct))!;
+            if (await insert.ExecuteScalarAsync(ct) is not Guid id) return (null, "USERNAME_TAKEN");
+            clinicianId = id;
         }
         catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
         {
+            // ON CONFLICT covers concurrent registrations too; this stays for any unique constraint added later.
             return (null, "USERNAME_TAKEN");
         }
         catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.ForeignKeyViolation)

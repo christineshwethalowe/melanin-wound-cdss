@@ -6,15 +6,7 @@ using Sync.Common.Recommendations;
 
 namespace Orchestrator.Graph;
 
-/// <summary>
-/// The orchestrator's Agent Framework workflow (architecture §10.1): six typed executors joined by
-/// conditional edges. The workflow coordinates, retries and records. It never decides clinical content;
-/// any language model sits behind the Recommendation Service boundary, where its output is verified.
-///
-/// Crash safety comes from Kafka and the database rather than from workflow checkpoints: the offset is
-/// committed only after the run's outcome is durable, so a killed worker's message is redelivered and the
-/// run repeats; InboxCheck and the unique (assessment_id, revision) constraint make the repeat harmless (§11).
-/// </summary>
+/// <summary>The orchestrator workflow: six executors that coordinate and record but never decide clinical content.</summary>
 public sealed class OrchestratorGraph(IOrchestratorStore store, IRecommendationClient client,
     RecommendationResponseValidator validator)
 {

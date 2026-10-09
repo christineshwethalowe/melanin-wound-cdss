@@ -4,18 +4,7 @@ using Sync.Common.Auth;
 
 namespace SyncGateway.Endpoints;
 
-/// <summary>
-/// GET /v1/figures/{corpusVersion}/{figureId} (architecture §10.4): guideline figures referenced by a recommendation,
-/// proxied so the device never talks to the Recommendation Service directly. The device caches them in figures_local
-/// (§6), so a figure fetched once survives restarts.
-///
-/// - Device tokens only, like pull (a dashboard token has no device and gets 401).
-/// - Ids are checked strictly before anything is forwarded: no path tricks reach the service.
-/// - Passes through the bytes, Content-Type, ETag / 304 and the licence and attribution headers
-///   (<see cref="PassThroughHeaders"/>). A corpus version is a frozen snapshot, so a figure never changes:
-///   cacheable for a year unless the service says otherwise.
-/// - 404 stays 404; an unreachable or failing service is 502 FIGURE_UNAVAILABLE (the device tries again later).
-/// </summary>
+/// <summary>Proxies guideline figures to the device with strict id checks and long caching; 502 if the service is down.</summary>
 public static partial class FiguresProxyEndpoint
 {
     /// <summary>Upper bound on one figure; anything larger is refused rather than buffered.</summary>

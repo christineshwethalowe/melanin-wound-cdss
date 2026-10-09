@@ -1,11 +1,4 @@
-"""
-Plan phase 8 (architecture §13.1): the REST baseline, POST /v1/baseline/assessments, and the two differences the
-evaluation measures against the event-driven path: duplicates (no idempotency) and the device waiting for advice.
-
-DISRUPTIVE: restarts the rag-stub with a delay and failure modes; it is put back at the end. Local Docker stack only.
-
-    python tests/integration/e2e_baseline.py
-"""
+"""DISRUPTIVE: tests the REST baseline's duplicates and waiting-for-advice behaviour (local Docker only)."""
 import os
 import secrets
 import subprocess

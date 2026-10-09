@@ -1,15 +1,33 @@
 import 'package:flutter/material.dart';
 
 import '../../../app/app_services.dart';
+import '../../../core/theme.dart';
+import '../../../core/widgets.dart';
 import '../api/sync_api.dart';
 
-/// Sign in (architecture §7.3). The code field appears only when the server says MFA_REQUIRED. Capturing never needs
-/// this: only syncing does, so a clinician can keep working offline and sign in later.
+/// Sign-in screen; the MFA code field appears only when the server asks for it.
 class SignInScreen extends StatefulWidget {
-  const SignInScreen({super.key, required this.services, required this.onSignedIn});
+  const SignInScreen({super.key, required this.services, required this.onSignedIn, this.onCancel});
 
   final AppServices services;
   final VoidCallback onSignedIn;
+
+  /// Set when signing in again on top of the app (see [again]): shows a close button and says the work is kept.
+  final VoidCallback? onCancel;
+
+  /// Re-sign-in shown over the app after a session ends; the queue and screens stay put.
+  static Future<void> again(BuildContext context, AppServices services) =>
+      Navigator.of(context).push(MaterialPageRoute<void>(
+        fullscreenDialog: true,
+        builder: (route) => SignInScreen(
+          services: services,
+          onCancel: () => Navigator.of(route).pop(),
+          onSignedIn: () {
+            Navigator.of(route).pop();
+            services.scheduler.syncNow();
+          },
+        ),
+      ));
 
   /// The backend's reason codes (contracts/auth.schema.json), in words a clinician can act on.
   static String message(String? code) => switch (code) {
@@ -18,7 +36,7 @@ class SignInScreen extends StatefulWidget {
         'MFA_REQUIRED' => 'Enter the 6-digit code from your authenticator app.',
         'INVALID_TOTP' => 'That code is not right or has expired. Try the current one.',
         'DEVICE_NOT_ALLOWED' => 'This phone is not allowed for your facility. Ask an admin.',
-        _ => 'Could not sign in${code == null ? '' : ' ($code)'}.',
+        _ => 'Could not sign in. Please try again.',
       };
 
   @override
@@ -67,47 +85,115 @@ class _SignInScreenState extends State<SignInScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('Sign in')),
-        body: ListView(
-          padding: const EdgeInsets.all(24),
-          children: [
-            TextField(
-              key: const Key('username'),
-              controller: _username,
-              decoration: const InputDecoration(labelText: 'Username'),
-              autocorrect: false,
-              textInputAction: TextInputAction.next,
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              key: const Key('password'),
-              controller: _password,
-              decoration: const InputDecoration(labelText: 'Password'),
-              obscureText: true,
-            ),
-            if (_needsCode) ...[
-              const SizedBox(height: 12),
-              TextField(
-                key: const Key('totp'),
-                controller: _code,
-                decoration: const InputDecoration(labelText: 'Authenticator code'),
-                keyboardType: TextInputType.number,
-                maxLength: 6,
+        appBar: widget.onCancel == null
+            ? null
+            : AppBar(
+                leading: IconButton(
+                    key: const Key('signInCancel'), icon: const Icon(Icons.close_rounded), onPressed: widget.onCancel),
               ),
-            ],
-            if (_error != null) ...[
-              const SizedBox(height: 12),
-              Text(_error!, key: const Key('signInError'), style: TextStyle(color: Theme.of(context).colorScheme.error)),
-            ],
-            const SizedBox(height: 24),
-            FilledButton(
-              key: const Key('signInButton'),
-              onPressed: _busy ? null : _submit,
-              child: _busy
-                  ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Text('Sign in'),
+        body: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 420),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                  const Center(child: BrandMark()),
+                  const SizedBox(height: 22),
+                  Text('WoundAI', textAlign: TextAlign.center, style: Theme.of(context).textTheme.headlineSmall),
+                  const SizedBox(height: 4),
+                  const Text('Clinical wound assessment support',
+                      textAlign: TextAlign.center, style: TextStyle(color: WoundColors.textSecondary, fontSize: 14)),
+                  if (widget.onCancel != null) ...[
+                    const SizedBox(height: 18),
+                    const Text(
+                      'Your session ended. Assessments saved on this phone are kept and sync once you sign in.',
+                      key: Key('signInAgainNote'),
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                  const SizedBox(height: 28),
+                  const FieldLabel('Username'),
+                  TextField(
+                    key: const Key('username'),
+                    controller: _username,
+                    decoration: const InputDecoration(hintText: 'e.g. n.silva'),
+                    autocorrect: false,
+                    textInputAction: TextInputAction.next,
+                  ),
+                  const SizedBox(height: 16),
+                  const FieldLabel('Password'),
+                  TextField(
+                    key: const Key('password'),
+                    controller: _password,
+                    decoration: const InputDecoration(hintText: '••••••••'),
+                    obscureText: true,
+                    onSubmitted: (_) => _busy ? null : _submit(),
+                  ),
+                  if (_needsCode) ...[
+                    const SizedBox(height: 16),
+                    const FieldLabel('Authenticator code'),
+                    TextField(
+                      key: const Key('totp'),
+                      controller: _code,
+                      decoration: const InputDecoration(hintText: '6-digit code', counterText: ''),
+                      keyboardType: TextInputType.number,
+                      maxLength: 6,
+                    ),
+                  ],
+                  if (_error != null) ...[
+                    const SizedBox(height: 14),
+                    Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      const Icon(Icons.error_outline_rounded, size: 16, color: WoundColors.error),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(_error!,
+                            key: const Key('signInError'),
+                            style: const TextStyle(color: WoundColors.error, fontSize: 13, fontWeight: FontWeight.w600)),
+                      ),
+                    ]),
+                  ],
+                  const SizedBox(height: 22),
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(WoundRadii.m), boxShadow: _busy ? null : WoundShadows.accent),
+                    child: FilledButton(
+                      key: const Key('signInButton'),
+                      onPressed: _busy ? null : _submit,
+                      child: _busy
+                          ? const SizedBox(
+                              height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                          : const Text('Sign in'),
+                    ),
+                  ),
+                  const SizedBox(height: 26),
+                  const Text('Demo environment — prototype for research evaluation only.',
+                      textAlign: TextAlign.center, style: TextStyle(fontSize: 11.5, color: WoundColors.textTertiary)),
+                ]),
+              ),
             ),
-          ],
+          ),
         ),
+      );
+}
+
+/// The rounded teal app mark (the prototype's scan icon).
+class BrandMark extends StatelessWidget {
+  const BrandMark({super.key, this.size = 56});
+
+  final double size;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+              begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [WoundColors.accent, WoundColors.accentDark]),
+          borderRadius: BorderRadius.circular(size * 0.29),
+          boxShadow: WoundShadows.accent,
+        ),
+        child: Icon(Icons.center_focus_strong_outlined, color: Colors.white, size: size * 0.48),
       );
 }

@@ -4,14 +4,7 @@ using Orchestrator.Graph;
 
 namespace Orchestrator.Executors;
 
-/// <summary>
-/// Calls POST /v1/recommendations (architecture §10.1, §10.3) through <see cref="IRecommendationClient"/>,
-/// which carries the 60 s timeout, bounded retries and circuit breaker.
-/// - 200 (generated or extractive) → Ok
-/// - 422 / 409 → ContractError: straight to the DLQ, never retried
-/// - anything else (timeout, 503, open circuit, unreachable) → Deferred: ADVICE_DEFERRED, then the retry topics
-/// Idempotency on the service side is keyed on (caseId, revision), so a repeated call returns the stored answer.
-/// </summary>
+/// <summary>Calls the Recommendation Service: 200 is OK, 422/409 go to the DLQ, anything else is deferred for retry.</summary>
 [YieldsOutput(typeof(OrchestrationOutcome))]
 public sealed class CallRagExecutor(IRecommendationClient client) : Executor<ContextBuilt, RagCallResult>("CallRag")
 {

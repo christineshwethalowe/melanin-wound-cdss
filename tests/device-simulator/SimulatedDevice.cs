@@ -2,13 +2,7 @@ using System.Net;
 
 namespace DeviceSimulator;
 
-/// <summary>
-/// One simulated phone (§13.1). Captures go into its <see cref="DeviceQueue"/> while a single sync loop runs the §6.2
-/// rules: probe /health, push the oldest batch (gzip, per-event results), back off with full jitter on failure,
-/// honour Retry-After, split on 413, then pull changes after its cursor until every record is final.
-/// In baseline mode it instead sends each capture to the REST baseline and retries the same request on failure,
-/// as a naive client would (§13.1).
-/// </summary>
+/// <summary>One simulated phone: captures into its queue while a sync loop pushes, pulls and backs off.</summary>
 public sealed class SimulatedDevice(string deviceId, GatewayClient gateway, EventFactory events, SimOptions options,
     TimeProvider clock, Random random)
 {
@@ -36,10 +30,7 @@ public sealed class SimulatedDevice(string deviceId, GatewayClient gateway, Even
         await capturing;
     }
 
-    /// <summary>
-    /// Runs one network step. A transport failure or a failed login mid-step (connection reset, gateway unreachable)
-    /// never stops the device: leased rows return to PENDING when their lease lapses and it backs off (§6.2).
-    /// </summary>
+    /// <summary>Runs one network step; failures never stop the device, it just backs off.</summary>
     private async Task<bool> TryAsync(Func<Task> step, CancellationToken ct)
     {
         try

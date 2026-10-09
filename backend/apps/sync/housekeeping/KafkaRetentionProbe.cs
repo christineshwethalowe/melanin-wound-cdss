@@ -7,10 +7,7 @@ namespace Housekeeping;
 /// <summary>Reads retention.ms of the topics whose consumers record messages in messaging.inbox.</summary>
 public sealed class KafkaRetentionProbe(IAdminClient admin, ILogger<KafkaRetentionProbe> logger)
 {
-    /// <summary>
-    /// The orchestrator records every message it handles from these (§10.1). The dead-letter topic is included because
-    /// a replayed dead letter is redelivered too.
-    /// </summary>
+    /// <summary>Topics the orchestrator reads, including the DLQ since replayed dead letters are redelivered too.</summary>
     public static readonly string[] InboxTopics =
         [Topics.WoundEventsPersisted, Topics.Retry30s, Topics.Retry5m, Topics.DeadLetter];
 

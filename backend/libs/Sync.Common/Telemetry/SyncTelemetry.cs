@@ -5,17 +5,7 @@ using Sync.Common.Kafka;
 
 namespace Sync.Common.Telemetry;
 
-/// <summary>
-/// Tracing architecture (§13, plan phase 11). One W3C trace follows an assessment from the device through
-/// the gateway, into Kafka headers, through the persister and orchestrator, and back out on pull:
-///
-///   device (traceparent header) → gateway span → Kafka header "traceparent" → persister span
-///   → outbox headers → wound-events.persisted → orchestrator span → Recommendation Service HTTP span
-///
-/// Each service creates spans from its own <see cref="ActivitySource"/> below. Exporting (OpenTelemetry
-/// SDK → OTLP → otel-collector → Prometheus/Grafana) is wired in plan phase 11; until then the sources
-/// cost nothing because no listener is attached.
-/// </summary>
+/// <summary>Trace sources so one trace follows an assessment from device through Kafka to the Recommendation Service.</summary>
 public static class SyncTelemetry
 {
     public static readonly ActivitySource Gateway = new("MelaninWoundCdss.SyncGateway");

@@ -10,10 +10,9 @@ using Sync.Common.Persistence;
 using Sync.Common.Telemetry;
 using OpenTelemetry.Trace;
 using OpenTelemetry.Metrics;
+using Sync.Common.Web;
 
-// Identity service (ADR 0003): clinician login/refresh/logout, MFA and facility admin. The only service that
-// signs tokens; everything else validates them against /.well-known/jwks.json. Stateless; scale by replicas
-// once Jwt__SigningKeyPem is set (all replicas must share the key).
+// Identity service: login, MFA and admin; the only service that signs tokens.
 var builder = WebApplication.CreateBuilder(args);
 builder.AddSyncTelemetry("identity-service")
     .WithTracing(t => t.AddAspNetCoreInstrumentation())
@@ -50,7 +49,8 @@ builder.Services.Configure<ForwardedHeadersOptions>(o =>
     o.KnownProxies.Clear();
 });
 
-// MFA and admin endpoints need a signed-in clinician; the service checks its own tokens with its own key.
+// MFA and admin endpoints need a signed-in clinician; this service checks its own bearer tokens.
+builder.Services.AddInMemoryDataProtection();
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(o =>

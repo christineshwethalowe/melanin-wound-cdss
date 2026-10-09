@@ -27,8 +27,7 @@ class ApiException implements Exception {
   String toString() => 'ApiException($status${code == null ? '' : ' $code'})';
 }
 
-/// The dashboard's calls: /v1/auth (login, refresh, logout) and /v1/admin (clinicians, devices, audit), through the
-/// API gateway. Admin calls are scoped to the admin's facility by the server, from the token.
+/// The dashboard's auth and admin API calls, all through the API gateway.
 class AdminApi {
   AdminApi(this.baseUri, {http.Client? client}) : _http = client ?? http.Client();
 
@@ -42,8 +41,7 @@ class AdminApi {
 
   // ---- auth ----
 
-  /// Throws [ApiException] 401 with MFA_REQUIRED (ask for a code), INVALID_TOTP, INVALID_CREDENTIALS,
-  /// CREDENTIAL_LOCKED or CLIENT_NOT_ALLOWED (not an admin).
+  /// Throws [ApiException] 401 with MFA_REQUIRED, INVALID_TOTP, INVALID_CREDENTIALS, CREDENTIAL_LOCKED or CLIENT_NOT_ALLOWED.
   Future<TokenPair> login({required String username, required String password, String? totp}) async =>
       TokenPair.fromJson(
         await _json(

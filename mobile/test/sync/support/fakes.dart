@@ -52,8 +52,7 @@ enum PushFault {
   tooLarge413,
 }
 
-/// An in-memory gateway that behaves like the real one: deduplicates by eventId (DUPLICATE on repeats), records a
-/// PERSISTED change per stored event and, optionally, a RECOMMENDATION_READY right after, and pages pull (§7.1, §7.2).
+/// In-memory fake gateway that dedups, records changes and pages pulls like the real one.
 class FakeGateway implements SyncApi {
   FakeGateway({this.autoRecommend = true, this.maxBatchBeforeSplit = 50, Random? random, this.faultRate = 0,
       this.requireMfa = false, this.recommendationFigures = const []})
@@ -77,6 +76,9 @@ class FakeGateway implements SyncApi {
 
   /// eventId → how many times the server stored it (must never exceed 1).
   final Map<String, int> stored = {};
+
+  /// eventId → the stored event, as the server received it.
+  final Map<String, Map<String, dynamic>> storedEvents = {};
   final List<Map<String, dynamic>> _changes = [];
   int _seq = 0;
   int pushes = 0;
@@ -85,6 +87,15 @@ class FakeGateway implements SyncApi {
   String _validAccess = 'access-0';
   String _validRefresh = 'refresh-0';
   bool sessionRevoked = false;
+
+  /// Thrown once by the next refresh instead of answering, e.g. ApiException(503): an error outside §7.1's 401 rule.
+  Object? refreshError;
+
+  /// Thrown once by the next push instead of answering, e.g. the FormatException of a Wi-Fi login page.
+  Object? pushError;
+
+  /// Runs at the start of every push (e.g. another run taking the sync lease meanwhile).
+  Future<void> Function()? onPush;
 
   @override
   Future<bool> health() async => reachable;
@@ -103,6 +114,10 @@ class FakeGateway implements SyncApi {
   Future<TokenPair> refresh(String refreshToken) async {
     if (!reachable) throw TransportException('unreachable');
     refreshes++;
+    if (refreshError case final e?) {
+      refreshError = null;
+      throw e;
+    }
     if (sessionRevoked || refreshToken != _validRefresh) throw ApiException(401, 'INVALID_REFRESH_TOKEN');
     return _issue();
   }
@@ -134,6 +149,11 @@ class FakeGateway implements SyncApi {
   @override
   Future<PushResponse> push(String accessToken, String deviceId, List<String> eventJson) async {
     pushes++;
+    await onPush?.call();
+    if (pushError case final e?) {
+      pushError = null;
+      throw e;
+    }
     final fault = scripted.isNotEmpty
         ? scripted.removeAt(0)
         : (_random.nextDouble() < faultRate
@@ -157,6 +177,7 @@ class FakeGateway implements SyncApi {
         continue;
       }
       stored[id] = 1;
+      storedEvents[id] = event;
       results.add(PushEventResult(id, 'ACCEPTED'));
       _change('PERSISTED', event);
       if (autoRecommend) _change('RECOMMENDATION_READY', event);
@@ -219,5 +240,16 @@ class FakeGateway implements SyncApi {
       'x-figure-attribution': 'Test corpus',
       'x-figure-tier': 'A',
     });
+  }
+
+  /// Patient aliases stored by setPatientAlias, by patientRef (the server's clinical.patient.display_alias).
+  final Map<String, String> patientAliases = {};
+
+  @override
+  Future<void> setPatientAlias(String accessToken, String patientRef, String alias) async {
+    if (!reachable) throw TransportException('unreachable');
+    if (accessToken != _validAccess) throw ApiException(401);
+    if (!RegExp(r'^p-[0-9a-f]{6,32}$').hasMatch(patientRef)) throw ApiException(400, 'INVALID_PATIENT_REF');
+    patientAliases[patientRef] = alias;
   }
 }

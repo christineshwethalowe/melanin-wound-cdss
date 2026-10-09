@@ -2,12 +2,7 @@ using Npgsql;
 
 namespace IdentityService.Auth;
 
-/// <summary>
-/// Samples session health from clinical.clinician_session once a minute for the <see cref="AuthMetrics"/> gauges.
-/// A session is a login and its chain of refreshes (one family_id). It ends when its latest row is revoked: logout,
-/// clinician deactivation or device revocation. A session whose refresh token simply expired is counted apart,
-/// because when it was last used is not recorded precisely.
-/// </summary>
+/// <summary>Samples session health once a minute for the auth metrics gauges.</summary>
 public sealed class AuthHealthSampler(NpgsqlDataSource db, ILogger<AuthHealthSampler> logger) : BackgroundService
 {
     public static readonly TimeSpan Interval = TimeSpan.FromMinutes(1);

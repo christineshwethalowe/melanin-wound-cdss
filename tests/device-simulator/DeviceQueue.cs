@@ -35,11 +35,7 @@ public sealed class QueuedEvent(JsonObject payload)
     public bool IsFinal => Status is RecordStatus.Rejected or RecordStatus.Complete or RecordStatus.Superseded;
 }
 
-/// <summary>
-/// The offline queue (§6): a table with a status column, oldest first. Leases make a killed or timed-out sync safe:
-/// rows sent are IN_FLIGHT until their lease lapses, then they return to PENDING and are sent again (§6.2).
-/// Thread-safe: capture and sync run concurrently, as on the phone.
-/// </summary>
+/// <summary>Thread-safe offline queue where leased rows go back to pending if the lease lapses.</summary>
 public sealed class DeviceQueue(TimeProvider clock)
 {
     public static readonly TimeSpan Lease = TimeSpan.FromMinutes(2);

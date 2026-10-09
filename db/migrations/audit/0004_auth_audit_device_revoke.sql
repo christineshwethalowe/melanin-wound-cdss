@@ -1,5 +1,4 @@
--- Device revocation (architecture §12: "devices are registered and can be revoked"). An admin revoking a phone is
--- recorded like the other admin actions: device_id set, clinician_id empty, the admin as actor.
+-- Records device revocations in the auth audit with the admin as actor.
 ALTER TABLE audit.auth_audit DROP CONSTRAINT auth_audit_action_check;
 ALTER TABLE audit.auth_audit ADD CONSTRAINT auth_audit_action_check CHECK (action IN (
     'LOGIN', 'REFRESH', 'LOGOUT', 'LOCKOUT',

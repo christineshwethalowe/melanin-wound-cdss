@@ -5,9 +5,7 @@ using Sync.Common.Kafka;
 using Sync.Common.Persistence;
 using Sync.Common.Telemetry;
 
-// Housekeeping (architecture §9.4): outbox cleanup, change-log archival and inbox retention.
-//   dotnet run --project backend/apps/sync/housekeeping              a cycle every Housekeeping:Interval
-//   dotnet run --project backend/apps/sync/housekeeping -- run-once  one cycle, print what it did, exit
+// Housekeeping service; run with "-- run-once" to do a single cycle and exit.
 var builder = Host.CreateApplicationBuilder(args);
 builder.AddSyncTelemetry("housekeeping");
 

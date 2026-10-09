@@ -7,21 +7,13 @@ namespace Orchestrator.Clients;
 /// <summary>StatusCode 0 means no HTTP answer at all (timeout, unreachable, open circuit); Error then says why.</summary>
 public sealed record RecommendationCallResult(int StatusCode, JsonElement? Body, string? Error);
 
-/// <summary>
-/// Boundary to Member 3's Recommendation Service (C#/.NET 10), contract v1.0 (§10.2). The orchestrator only
-/// talks to it through this interface, so the benchmark can swap in backend/tests/rag-stub exactly as the
-/// methodology plans.
-/// </summary>
+/// <summary>Interface to the Recommendation Service, so tests and benchmarks can swap in the RAG stub.</summary>
 public interface IRecommendationClient
 {
     Task<RecommendationCallResult> RecommendAsync(RecommendationRequest request, CancellationToken ct);
 }
 
-/// <summary>
-/// HTTP implementation. The named HttpClient "recommendation-service" (Program.cs) carries the resilience
-/// pipeline: 60 s per attempt, bounded retries with backoff, and a circuit breaker. Never throws for an HTTP
-/// status or a transport failure; CallRag maps the result.
-/// </summary>
+/// <summary>HTTP client with timeout, retries and circuit breaker; never throws, CallRag maps the result.</summary>
 public sealed class HttpRecommendationClient(IHttpClientFactory factory, ILogger<HttpRecommendationClient> logger)
     : IRecommendationClient
 {

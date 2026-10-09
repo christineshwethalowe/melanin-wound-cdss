@@ -4,13 +4,7 @@ using Sync.Common.Recommendations;
 
 namespace Orchestrator.Executors;
 
-/// <summary>
-/// Checks the response against contracts/rag-response.schema.json, that it answers the case and revision that
-/// were asked, and that every section's citation tags resolve in the citations list (architecture §10.1), using
-/// the <see cref="RecommendationResponseValidator"/> the REST baseline shares. It does not re-judge clinical
-/// content: that stays behind the Recommendation Service boundary.
-/// Invalid → Deferred (retry topics, then DLQ).
-/// </summary>
+/// <summary>Checks the response matches the schema, the requested case and its citations; invalid means deferred.</summary>
 [YieldsOutput(typeof(OrchestrationOutcome))]
 public sealed class ValidateResponseExecutor(RecommendationResponseValidator validator)
     : Executor<RagCallResult, ValidatedRecommendation>("ValidateResponse")

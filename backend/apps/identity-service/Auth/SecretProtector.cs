@@ -3,13 +3,7 @@ using System.Text;
 
 namespace IdentityService.Auth;
 
-/// <summary>
-/// Encrypts small secrets (the TOTP seed) before they are stored, using AES-256-GCM. The key comes from
-/// configuration (Secrets__EncryptionKey), kept outside the database next to the JWT signing key (§12),
-/// so a database dump alone does not reveal any MFA secret.
-/// The clinician id is bound in as associated data: a ciphertext copied to another account will not decrypt.
-/// Layout: nonce (12) | tag (16) | ciphertext.
-/// </summary>
+/// <summary>Encrypts small secrets like the TOTP seed with AES-256-GCM, bound to the clinician id.</summary>
 public sealed class SecretProtector
 {
     private const int NonceSize = 12;

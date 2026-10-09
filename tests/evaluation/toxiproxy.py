@@ -27,4 +27,4 @@ def add(name, toxic_type, attributes, stream="downstream", toxicity=1.0):
 
 def set_enabled(enabled):
     """Disabled = every connection refused and open ones dropped: the hospital Wi-Fi is gone."""
-    _call("POST", f"/proxies/{PROXY}", {"enabled": enabled})
+    _call("PATCH", f"/proxies/{PROXY}", {"enabled": enabled})  # updating with POST is deprecated

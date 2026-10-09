@@ -7,8 +7,7 @@ import 'package:uuid/uuid.dart';
 
 import 'sync_models.dart';
 
-/// No HTTP answer at all: unreachable, connection reset, timeout. The server may or may not have acted, which is
-/// safe because every event is idempotent (§11).
+/// No HTTP response at all; safe to retry since every event is idempotent.
 class TransportException implements Exception {
   TransportException(this.message);
 
@@ -30,8 +29,7 @@ class ApiException implements Exception {
   String toString() => 'ApiException($status${code == null ? '' : ' $code'})';
 }
 
-/// The answer to one push (§7.1). Status codes other than 200 are returned, not thrown, because each means a
-/// different next step for the sync engine (refresh, split, back off).
+/// Result of one push; non-200 codes are returned, not thrown, so the engine can decide what to do.
 class PushResponse {
   const PushResponse(this.status, this.results, {this.retryAfter, this.code});
 
@@ -58,6 +56,9 @@ abstract class SyncApi {
   Future<PushResponse> push(String accessToken, String deviceId, List<String> eventJson);
   Future<PullPage> pull(String accessToken, int cursor, {int limit});
   Future<FigureResponse> figure(String accessToken, String corpusVersion, String figureId, {String? etag});
+
+  /// Saves a patient's display alias on the server. Throws [ApiException] or [TransportException].
+  Future<void> setPatientAlias(String accessToken, String patientRef, String alias);
 }
 
 class HttpSyncApi implements SyncApi {
@@ -72,6 +73,9 @@ class HttpSyncApi implements SyncApi {
   /// Bodies above this are gzip-compressed on a separate isolate, so the UI isolate never does the work (§6.2).
   static const isolateGzipThreshold = 32 * 1024;
 
+  /// Pull pages bigger than this are decoded off the UI isolate to avoid dropped frames.
+  static const isolateDecodeThreshold = 32 * 1024;
+
   Uri _uri(String path, [Map<String, String>? query]) =>
       baseUri.replace(path: '${baseUri.path.replaceAll(RegExp(r'/$'), '')}/$path', queryParameters: query);
 
@@ -83,12 +87,17 @@ class HttpSyncApi implements SyncApi {
     }
   }
 
+  /// Only the gateway's {"status":"ok"} counts as reachable, not a captive-portal 200.
   @override
   Future<bool> health() async {
     try {
       final r = await _send(_http.get(_uri('health')), healthTimeout);
-      return r.statusCode == 200;
+      if (r.statusCode != 200) return false;
+      final body = jsonDecode(r.body);
+      return body is Map && body['status'] == 'ok';
     } on TransportException {
+      return false;
+    } on FormatException {
       return false;
     }
   }
@@ -152,8 +161,12 @@ class HttpSyncApi implements SyncApi {
             headers: {'Authorization': 'Bearer $accessToken'}),
         requestTimeout);
     if (r.statusCode != 200) throw ApiException(r.statusCode, _code(r), _retryAfter(r));
-    return PullPage.fromJson(jsonDecode(r.body) as Map<String, dynamic>);
+    final bytes = r.bodyBytes;
+    return bytes.length > isolateDecodeThreshold ? Isolate.run(() => _pullPage(bytes)) : _pullPage(bytes);
   }
+
+  static PullPage _pullPage(List<int> bytes) =>
+      PullPage.fromJson(jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>);
 
   @override
   Future<FigureResponse> figure(String accessToken, String corpusVersion, String figureId, {String? etag}) async {
@@ -166,6 +179,16 @@ class HttpSyncApi implements SyncApi {
       return FigureResponse(r.statusCode, r.bodyBytes, r.headers);
     }
     throw ApiException(r.statusCode, _code(r), _retryAfter(r));
+  }
+
+  @override
+  Future<void> setPatientAlias(String accessToken, String patientRef, String alias) async {
+    final r = await _send(
+        _http.put(_uri('v1/patients/${Uri.encodeComponent(patientRef)}/alias'),
+            headers: {'Authorization': 'Bearer $accessToken', 'Content-Type': 'application/json'},
+            body: jsonEncode({'displayAlias': alias})),
+        requestTimeout);
+    if (r.statusCode != 200) throw ApiException(r.statusCode, _code(r), _retryAfter(r));
   }
 
   static String? _code(http.Response r) {

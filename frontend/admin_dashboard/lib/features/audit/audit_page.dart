@@ -6,8 +6,7 @@ import '../../core/models.dart';
 import '../../core/toast.dart';
 import '../../core/ui.dart';
 
-/// Recent sign-in and admin events for the facility, newest first (audit.auth_audit). Filtering happens in the
-/// browser over the rows fetched; the server returns at most 1000.
+/// Recent sign-in and admin events for the facility, filtered in the browser (max 1000 rows).
 class AuditPage extends StatefulWidget {
   const AuditPage({super.key, required this.session});
 

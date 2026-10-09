@@ -4,11 +4,7 @@ namespace IdentityService.Auth;
 
 public sealed record MfaEnrollment(string Secret, string OtpAuthUri);
 
-/// <summary>
-/// TOTP enrolment for a signed-in clinician (architecture §7.3). Two steps so a typo in the authenticator
-/// app cannot lock anyone out: enrol stores a new secret, and MFA only becomes required once the clinician
-/// confirms it with a valid code. Re-enrolling while MFA is on needs an admin reset first.
-/// </summary>
+/// <summary>Two-step TOTP enrolment: MFA only turns on once the clinician confirms a valid code.</summary>
 public sealed class MfaService(NpgsqlDataSource db, SecretProtector secrets, JwtOptions jwt)
 {
     public async Task<(MfaEnrollment? Enrollment, string? Error)> EnrollAsync(Guid clinicianId, string? deviceId, CancellationToken ct)

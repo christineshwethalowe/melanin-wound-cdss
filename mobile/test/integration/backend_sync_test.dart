@@ -15,10 +15,7 @@ import 'package:melanin_wound_cdss/features/sync/engine/sync_engine.dart';
 
 import '../sync/support/fakes.dart';
 
-/// The real sync engine against the real backend (Docker stack, through the API gateway): login, push, the full
-/// server pipeline, pull, advice stored on the device. Skipped unless SYNC_BACKEND_URL is set:
-///
-///   SYNC_BACKEND_URL=http://localhost:8080 flutter test --tags integration
+/// Real engine against the real backend; runs only with SYNC_BACKEND_URL set (flutter test --tags integration).
 void main() {
   final url = Platform.environment['SYNC_BACKEND_URL'];
 
@@ -35,9 +32,7 @@ void main() {
     final clinician = await auth.signIn(username: 'n.silva', password: 'Demo-Pass-2026!', deviceId: deviceId);
     expect(clinician.facilityId, 'fac-001');
 
-    // A brand-new phone: cursor 0, so the first sync pages through the facility's change history (hasMore) before
-    // reaching this run's changes. Pages are kept tiny so paging always happens: housekeeping archives history every
-    // device has read (§4), so how much history there is depends on when the test runs.
+    // Fresh phone at cursor 0 with tiny pages so the paging path always runs.
     expect(await queue.cursor(), 0);
 
     final first = sampleEvent(deviceId: deviceId);
@@ -80,16 +75,16 @@ void main() {
      timeout: const Timeout(Duration(minutes: 3)));
 }
 
-/// The real gateway client with a tiny page size, counting pages that said hasMore, so the paging path is exercised
-/// however much change history the server holds.
+/// Gateway client with tiny first pages to exercise paging, then normal pages to stay under the rate limit.
 class _SmallPagesApi extends HttpSyncApi {
   _SmallPagesApi(super.baseUri);
 
   int pagesWithMore = 0;
+  int _pulls = 0;
 
   @override
-  Future<PullPage> pull(String accessToken, int cursor, {int limit = 2}) async {
-    final page = await super.pull(accessToken, cursor, limit: 2);
+  Future<PullPage> pull(String accessToken, int cursor, {int limit = 200}) async {
+    final page = await super.pull(accessToken, cursor, limit: ++_pulls <= 5 ? 2 : limit);
     if (page.hasMore) pagesWithMore++;
     return page;
   }

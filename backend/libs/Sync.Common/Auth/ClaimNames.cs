@@ -1,8 +1,6 @@
 namespace Sync.Common.Auth;
 
-/// <summary>
-/// JWT claims issued by the identity service and read by every resource server (architecture §7.3, §12).
-/// </summary>
+/// <summary>JWT claim names shared by the identity service and every resource server.</summary>
 public static class ClaimNames
 {
     public const string Subject = "sub";

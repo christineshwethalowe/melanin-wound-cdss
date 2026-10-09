@@ -5,8 +5,7 @@ import '../../core/toast.dart';
 import '../../core/models.dart';
 import '../../core/ui.dart';
 
-/// The facility's registered phones. Revoking one ends its sessions and the Sync Gateway refuses it within 30 s;
-/// its queued, unsynced records stay on the phone.
+/// Registered phones; revoking ends their sessions within 30 s but leaves unsynced data on the phone.
 class DevicesPage extends StatefulWidget {
   const DevicesPage({super.key, required this.session});
 

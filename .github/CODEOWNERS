@@ -1,5 +1,4 @@
-# Replace the @handles with each member's GitHub username.
-# The last matching pattern wins.
+# Swap the @handles for each member's GitHub username; the last matching pattern wins.
 
 *                                   @member4-lowe
 
