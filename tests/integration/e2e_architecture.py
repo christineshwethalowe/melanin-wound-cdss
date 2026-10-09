@@ -22,7 +22,7 @@ import time
 import urllib.error
 import urllib.request
 
-from client import GATEWAY, REPO_ROOT, Checks, create_clinician, http, login, sql, uuid7, wait_for, wound_event
+from client import GATEWAY, REPO_ROOT, Checks, create_clinician, http, login, pull_all, sql, uuid7, wait_for, wound_event
 
 sys.stdout.reconfigure(encoding="utf-8")  # section titles use §; the Windows console defaults to cp1252
 
@@ -200,18 +200,17 @@ for topic, parts in [("wound-events", 6), ("wound-events.persisted", 6), ("recom
 
 # ------------------------------------------------------------------------------------------------------------
 section("§7.2: pull")
-status, body = http("GET", "/v1/sync/changes?cursor=0&limit=500", token=token)
-mine = [c for c in body["changes"] if c["assessmentId"] == a]
+status, changes, cursor = pull_all(token)
+mine = [c for c in changes if c["assessmentId"] == a and c["type"] == "PERSISTED"]
 check("PERSISTED changes for both revisions are pulled", {c["revision"] for c in mine} == {1, 2}, mine)
-cursor = body["nextCursor"]
 status, body = http("GET", f"/v1/sync/changes?cursor={cursor}&limit=500", token=token)
 check("changes from the last 60 s are re-sent even at the latest cursor (out-of-order commit guard)",
       any(c["assessmentId"] == a for c in body["changes"]), len(body["changes"]))
 check("device cursor is recorded server-side",
       sql(f"select last_seq from sync.device_cursor where device_id = '{DEVICE_A}'") == str(cursor))
-status, body = http("GET", "/v1/sync/changes?cursor=0&limit=500", token=token_b)
+status, changes_b, _ = pull_all(token_b)
 check("another facility does not see these changes (facility scope)",
-      status == 200 and not any(c["assessmentId"] == a for c in body["changes"]), status)
+      status == 200 and not any(c["assessmentId"] == a for c in changes_b), status)
 
 # ------------------------------------------------------------------------------------------------------------
 section("§7.3 / §12 / ADR 0003: identity and tokens")

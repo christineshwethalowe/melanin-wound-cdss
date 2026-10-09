@@ -27,7 +27,7 @@ and the pipeline recovered when Kafka came back.
 | 7 | Retry topics and dead-letter topic | §8.3, §11 | ✅ |
 | 8 | REST baseline endpoint | §13.1 | ✅ |
 | 9 | Per-service database roles (least privilege) | §9.4, §12 | ✅ |
-| 10 | Evaluation harness: device simulator, faults, metrics | §13 | ⬜ |
+| 10 | Evaluation harness: device simulator, faults, metrics | §13 | ✅ |
 | 11 | Observability: OpenTelemetry, Prometheus, Grafana | §13 | ⬜ |
 | 12 | Mobile: Drift queue + sync engine | §6 | ⬜ |
 
@@ -212,6 +212,71 @@ passes with the services running under these roles, which shows the grants are s
 - Fault scripts: kill a consumer, oversized event, replay a batch twice, slow stub, credential lockout.
 - SQL for each metric: sync latency, duplicate rate + DEDUPLICATED count, consumer lag,
   auditability completeness. Results exported as CSV for the report.
+
+**Part 1 ✅ device simulator** (`tests/device-simulator`, README there): 1–100 phones with the §6 queue, leases,
+backoff, gzip push, cursor pull, one clinician per device; event-driven or baseline mode; per-event CSV and a
+summary. `backend/tests/DeviceSimulator.Tests` (10 tests) checks its queue and backoff rules. A 100-device ×
+10-event run finishes all 1,000 events (894 advice, 106 superseded edits) with save-to-accepted p50 0.7 s / p95 2 s;
+the database matches it exactly.
+
+The first 100-device runs found three backend problems, fixed in the same step:
+
+- **Login under load**: the Argon2id check ran while holding a database connection and the credential row lock, so
+  100 simultaneous logins exhausted the identity service's pool (HTTP 500). The hash is now checked first with no
+  connection held (at most one check per CPU core at a time, 64 MB each); the transaction re-reads the row under
+  lock and only trusts the result if it was computed against the stored hash. Lockout, MFA and audit are unchanged.
+- **Pull livelock**: the 60 s re-send window shared one `LIMIT` with the rows after the cursor. With more recent
+  changes than the limit, every page was re-sent rows and `nextCursor` stopped advancing (62,514 pulls in one run).
+  The two are now read separately; only rows after the cursor decide `nextCursor` and `hasMore`.
+- **Connection budget**: each Npgsql pool defaulted to 100, enough for one service to take all of PostgreSQL's
+  connections. Pools are now bounded in docker-compose (identity 20, gateway 30, persister 10, relay 5,
+  orchestrator 10).
+
+**Part 2a ✅ scenarios and metrics** (`tests/evaluation`, README there): `run_experiment.py` runs the simulator
+through Toxiproxy under a fault (`clean`, `latency`, `loss`, `flaky`, `slow-advice`, `consumer-kill`) in event-driven
+and baseline mode, samples consumer lag, and writes the §13 metrics (`metrics.py`: sync latency, duplicates and
+DEDUPLICATED rows, device resends, auditability completeness, auth health) per run plus a `summary.csv` row.
+
+- Every scenario uses the same simulator settings so they compare: a new connection per request (Toxiproxy faults
+  are per connection), a capture every 2 s, and clinicians registered directly before the run.
+- The simulator now survives network errors like a real device: login retries with backoff, a failed step backs
+  off, and rows leased by an interrupted push are released at once.
+
+First results (10 devices × 10 events, through Toxiproxy): every event finished in every scenario with audit
+completeness 1.0. The event-driven path stored **0 extra rows in every scenario** (21 resends under `loss`); the
+baseline stored 8 (`loss`) and 1 (`flaky`). With a 3 s Recommendation Service the event-driven path confirmed a save
+in 0.6 s against the baseline's 8.9 s. On a clean or merely slow network the baseline is quicker (one request,
+fewer round trips).
+
+**Part 2b ✅ scaling** (`tests/evaluation/scaling.py`, §8.1):
+
+- `slow-advice` showed the orchestrator handled one message at a time (advice p50 118 s). It now processes
+  partitions in parallel and each partition in order (`Consumers/PartitionWorkers.cs`, §4 "concurrency per
+  consumer"): offsets are committed by the consume thread only after a message's outcome is durable, a full
+  partition is paused, and a partition handed over in a rebalance finishes its message and commits first.
+  `Orchestrator__MaxConcurrency` (default 6, 1 = one at a time). Same scenario: advice p50 19 s, p95 38 s.
+- Orchestrator, 120 events, 1 s Recommendation Service, one message at a time per replica: advice p50 54.8 s (1
+  replica) → 28.9 s (2) → 20.1 s (3) → 12.8 s (6); one replica with per-partition concurrency: 12.2 s.
+- Persister, 1,000-capture burst from 50 devices: throughput 36/s (1 replica) → 53/s (2), then flat at about 50/s
+  while the backlog keeps shrinking (232 → 22): past two replicas the devices' arrival rate is the limit, not the
+  persister.
+- 0 extra rows and audit completeness 1.0 at every scale.
+
+**Part 2c ✅ duplicate ablation** (§13: "an ablation run with the constraint and inbox switched off"):
+
+- Dropping the real constraints would corrupt the clinical record, so `Ablation__Enabled=true` records **shadow
+  rows** instead (`ablation` schema, no unique constraints): the gateway stops answering DUPLICATE, the persister
+  writes every message it receives to `ablation.wound_assessment`, and the orchestrator skips its inbox and writes
+  every recommendation it would store to `ablation.recommendation`. The real tables keep their protections. Each
+  service logs a warning in this mode; it is off by default and the runner switches it back off.
+- `run_experiment.py --ablation`, and a `replay` scenario (both consumer groups rewound to the run's start: every
+  message delivered twice, §11).
+- Results, 100 events: under `loss` the device's 27 resends would have been 27 duplicate assessments (shadow 127
+  rows; real store 100, 27 absorbed). Under `replay`: shadow 200 assessments and 168 recommendations (100 and 84
+  duplicates); real store 100 and 84, 0 duplicates, 100 absorbed.
+
+Phase 10 complete: simulator, scenarios, metrics, scaling and ablation. Results are written to
+`tests/evaluation/results/` (not committed).
 
 ## Phase 11: Observability
 

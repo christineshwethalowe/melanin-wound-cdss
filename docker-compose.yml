@@ -14,6 +14,8 @@ x-backend: &backend
   restart: unless-stopped
   # The owner login below is used only by db-migrate. Every service overrides it with its own role (plan phase 9,
   # db/migrations/_roles and grants); passwords are local-dev defaults, set real ones in .env.
+  # Pool sizes are bounded so all services together stay under PostgreSQL's 100 connections, even with the
+  # persister and relay scaled to two replicas: identity 20, gateway 30, persister 10, relay 5, orchestrator 10.
   environment: &backend-env
     ConnectionStrings__Postgres: "Host=postgres;Username=${POSTGRES_USER:-cdss};Password=${POSTGRES_PASSWORD:-cdss};Database=${POSTGRES_DB:-cdss}"
     Kafka__BootstrapServers: "kafka:9092"
@@ -137,7 +139,7 @@ services:
     restart: "no"
     environment:
       <<: *backend-env
-      ConnectionStrings__Postgres: "Host=postgres;Database=${POSTGRES_DB:-cdss};Username=identity_svc;Password=${DB_PASSWORD_IDENTITY:-identity-local-dev}"
+      ConnectionStrings__Postgres: "Host=postgres;Database=${POSTGRES_DB:-cdss};Username=identity_svc;Password=${DB_PASSWORD_IDENTITY:-identity-local-dev};Maximum Pool Size=20"
     depends_on:
       db-migrate:
         condition: service_completed_successfully
@@ -181,7 +183,7 @@ services:
         ENTRY: IdentityService.dll
     environment:
       <<: *backend-env
-      ConnectionStrings__Postgres: "Host=postgres;Database=${POSTGRES_DB:-cdss};Username=identity_svc;Password=${DB_PASSWORD_IDENTITY:-identity-local-dev}"
+      ConnectionStrings__Postgres: "Host=postgres;Database=${POSTGRES_DB:-cdss};Username=identity_svc;Password=${DB_PASSWORD_IDENTITY:-identity-local-dev};Maximum Pool Size=20"
       # Local development values. Without Jwt__SigningKeyPem a key is generated at start-up (restart = devices refresh).
       Jwt__SigningKeyPem: ${Jwt__SigningKeyPem:-}
       Secrets__EncryptionKey: ${Secrets__EncryptionKey:-local-dev-only-encryption-key-change-me-0123456}
@@ -199,9 +201,10 @@ services:
         ENTRY: SyncGateway.dll
     environment:
       <<: *backend-env
-      ConnectionStrings__Postgres: "Host=postgres;Database=${POSTGRES_DB:-cdss};Username=gateway_svc;Password=${DB_PASSWORD_GATEWAY:-gateway-local-dev}"
+      ConnectionStrings__Postgres: "Host=postgres;Database=${POSTGRES_DB:-cdss};Username=gateway_svc;Password=${DB_PASSWORD_GATEWAY:-gateway-local-dev};Maximum Pool Size=30"
       Jwt__MetadataAddress: "http://identity-service:8080/.well-known/openid-configuration"
       RecommendationService__BaseUrl: "http://rag-stub:8080"   # REST baseline only (§13.1)
+      Ablation__Enabled: ${ABLATION:-false}   # §13 duplicate ablation, evaluation only (tests/evaluation)
     depends_on:
       <<: *backend-deps
       identity-service:
@@ -217,7 +220,8 @@ services:
         ENTRY: IngestPersister.dll
     environment:
       <<: *backend-env
-      ConnectionStrings__Postgres: "Host=postgres;Database=${POSTGRES_DB:-cdss};Username=persister_svc;Password=${DB_PASSWORD_PERSISTER:-persister-local-dev}"
+      ConnectionStrings__Postgres: "Host=postgres;Database=${POSTGRES_DB:-cdss};Username=persister_svc;Password=${DB_PASSWORD_PERSISTER:-persister-local-dev};Maximum Pool Size=10"
+      Ablation__Enabled: ${ABLATION:-false}   # §13 duplicate ablation, evaluation only (tests/evaluation)
 
   outbox-relay:
     <<: *backend
@@ -229,7 +233,7 @@ services:
         ENTRY: OutboxRelay.dll
     environment:
       <<: *backend-env
-      ConnectionStrings__Postgres: "Host=postgres;Database=${POSTGRES_DB:-cdss};Username=relay_svc;Password=${DB_PASSWORD_RELAY:-relay-local-dev}"
+      ConnectionStrings__Postgres: "Host=postgres;Database=${POSTGRES_DB:-cdss};Username=relay_svc;Password=${DB_PASSWORD_RELAY:-relay-local-dev};Maximum Pool Size=5"
 
   orchestrator:
     <<: *backend
@@ -241,8 +245,11 @@ services:
         ENTRY: Orchestrator.dll
     environment:
       <<: *backend-env
-      ConnectionStrings__Postgres: "Host=postgres;Database=${POSTGRES_DB:-cdss};Username=orchestrator_svc;Password=${DB_PASSWORD_ORCHESTRATOR:-orchestrator-local-dev}"
+      ConnectionStrings__Postgres: "Host=postgres;Database=${POSTGRES_DB:-cdss};Username=orchestrator_svc;Password=${DB_PASSWORD_ORCHESTRATOR:-orchestrator-local-dev};Maximum Pool Size=10"
       RecommendationService__BaseUrl: "http://rag-stub:8080"
+      # Messages handled at once, across partitions (each partition stays in order). 1 = one at a time.
+      Ablation__Enabled: ${ABLATION:-false}   # §13 duplicate ablation, evaluation only (tests/evaluation)
+      Orchestrator__MaxConcurrency: ${ORCHESTRATOR_MAX_CONCURRENCY:-6}
       # Retry topic delays (§8.3). Defaults 30 s and 5 min; tests shorten them.
       Retry__FirstDelaySeconds: ${RETRY_FIRST_DELAY_SECONDS:-30}
       Retry__SecondDelaySeconds: ${RETRY_SECOND_DELAY_SECONDS:-300}

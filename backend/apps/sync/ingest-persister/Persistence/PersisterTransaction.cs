@@ -3,6 +3,7 @@ using Confluent.Kafka;
 using Npgsql;
 using NpgsqlTypes;
 using Sync.Common.Contracts;
+using Sync.Common.Evaluation;
 using Sync.Common.Kafka;
 using Sync.Common.Persistence;
 
@@ -20,7 +21,7 @@ public enum PersistOutcome { Persisted, Deduplicated, RevisionConflict }
 ///   5b. duplicate → DEDUPLICATED provenance only
 /// The caller commits the Kafka offset only after this returns.
 /// </summary>
-public sealed class PersisterTransaction(NpgsqlDataSource db)
+public sealed class PersisterTransaction(NpgsqlDataSource db, AblationOptions ablation)
 {
     public async Task<PersistOutcome> ExecuteAsync(
         WoundEvent evt, JsonElement raw, TopicPartitionOffset source, string? traceId, CancellationToken ct)
@@ -29,6 +30,15 @@ public sealed class PersisterTransaction(NpgsqlDataSource db)
         await using var tx = await conn.BeginTransactionAsync(ct);
 
         await AdvisoryLock.AcquireForAssessmentAsync(conn, tx, evt.AssessmentId, ct);
+
+        // §13 ablation: every message received, with no unique constraint — what the store would hold without
+        // idempotency. The real insert below still absorbs the repeat.
+        if (ablation.Enabled)
+            await ExecAsync(conn, tx, """
+                INSERT INTO ablation.wound_assessment (event_id, assessment_id, revision, device_id, kafka_ref)
+                VALUES (@e, @a, @r, @d, @k)
+                """, ct, ("e", evt.EventId), ("a", evt.AssessmentId), ("r", evt.Revision), ("d", evt.DeviceId),
+                ("k", source.KafkaRef()));
 
         await ExecAsync(conn, tx, """
             INSERT INTO clinical.patient (patient_ref, facility_id) VALUES (@p, @f)

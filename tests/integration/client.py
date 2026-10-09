@@ -57,6 +57,20 @@ def http(method, path, body=None, token=None):
         return e.code, (json.loads(raw) if raw else None)
 
 
+def pull_all(token, cursor=0, limit=500):
+    """Pulls like a device (§7.2): page after page until hasMore is false. Returns (status, changes, next_cursor)."""
+    changes = []
+    for _ in range(1000):
+        status, body = http("GET", f"/v1/sync/changes?cursor={cursor}&limit={limit}", token=token)
+        if status != 200:
+            return status, changes, cursor
+        changes.extend(body["changes"])
+        cursor = body["nextCursor"]
+        if not body["hasMore"]:
+            return status, changes, cursor
+    raise AssertionError("pull never reached hasMore=false: the cursor is not advancing")
+
+
 def sql(query):
     out = subprocess.run(["docker", "exec", "postgres", "psql", "-U", "cdss", "-d", "cdss", "-tAc", query],
                          capture_output=True, text=True, check=True)

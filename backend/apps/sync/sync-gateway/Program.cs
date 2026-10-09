@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Npgsql;
 using Sync.Common.Auth;
+using Sync.Common.Evaluation;
 using Sync.Common.Kafka;
 using Sync.Common.Persistence;
 using Sync.Common.Recommendations;
@@ -22,6 +23,7 @@ var jwt = builder.Configuration.GetSection("Jwt");
 
 builder.Services.AddSingleton(dataSource);
 builder.Services.AddSingleton<WoundEventValidator>();
+builder.Services.AddSingleton(new AblationOptions(builder.Configuration.GetValue<bool>(AblationOptions.ConfigKey)));
 builder.Services.AddSingleton<PushService>();
 // REST baseline (§13.1): calls the same Recommendation Service, inside the request, with the same 60 s timeout
 // the orchestrator allows per attempt but no retries.
@@ -59,6 +61,8 @@ builder.Services
 builder.Services.AddAuthorization();
 
 var app = builder.Build();
+
+if (app.Services.GetRequiredService<AblationOptions>().Enabled) app.Logger.LogWarning(AblationOptions.Warning);
 
 if (!app.Configuration.GetValue<bool>("SkipSchemaCheck"))
     await SchemaVersionGuard.EnsureAsync(dataSource, ExpectedSchemaVersions.All);

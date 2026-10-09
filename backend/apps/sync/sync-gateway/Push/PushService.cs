@@ -4,6 +4,7 @@ using System.Text.Json;
 using Confluent.Kafka;
 using Npgsql;
 using NpgsqlTypes;
+using Sync.Common.Evaluation;
 using Sync.Common.Kafka;
 using SyncGateway.Validation;
 
@@ -24,7 +25,8 @@ public sealed class BackboneUnavailableException(Exception inner) : Exception("K
 /// REJECTED individually and never block the rest of the batch.
 /// </summary>
 public sealed class PushService(
-    NpgsqlDataSource db, IProducer<string, byte[]> producer, WoundEventValidator validator, ILogger<PushService> logger)
+    NpgsqlDataSource db, IProducer<string, byte[]> producer, WoundEventValidator validator, AblationOptions ablation,
+    ILogger<PushService> logger)
 {
     public const int MaxEventsPerBatch = 50;
 
@@ -59,7 +61,8 @@ public sealed class PushService(
 
         // Anything the gateway accepted before (or that is already persisted) is a DUPLICATE: a repeated
         // reconnect ends safely without producing the event again.
-        var known = await KnownEventIdsAsync(candidates.Select(c => c.EventId).ToArray(), ct);
+        // In the §13 ablation this check is off, so a device's resends go into Kafka again.
+        var known = ablation.Enabled ? [] : await KnownEventIdsAsync(candidates.Select(c => c.EventId).ToArray(), ct);
         var toProduce = new List<(int Index, Guid EventId, Guid WoundId, JsonElement Json)>();
         foreach (var c in candidates)
         {
@@ -73,7 +76,7 @@ public sealed class PushService(
         var seenInBatch = new HashSet<Guid>();
         foreach (var c in toProduce)
         {
-            if (!seenInBatch.Add(c.EventId))
+            if (!seenInBatch.Add(c.EventId) && !ablation.Enabled)
             {
                 results[c.Index] = new PushEventResult(c.EventId.ToString(), "DUPLICATE");
                 continue;

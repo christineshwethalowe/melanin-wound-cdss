@@ -13,7 +13,7 @@ import subprocess
 import sys
 import time
 
-from client import REPO_ROOT, Checks, create_clinician, http, login, sql, uuid7, wait_for, wound_event
+from client import REPO_ROOT, Checks, create_clinician, http, login, pull_all, sql, uuid7, wait_for, wound_event
 
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -96,9 +96,9 @@ try:
     row = one(f"select mode || '|' || corpus_version || '|' || (payload->'sections'->0->'citationTags'->>0) "
               f"from clinical.recommendation where assessment_id = '{a}'")
     check("the service's answer is stored unchanged (mode, corpus version, cited section)", row == "extractive|stub-0|S1", row)
-    _, body = http("GET", "/v1/sync/changes?cursor=0&limit=500", token=token)
-    ready = [c for c in body["changes"] if c["assessmentId"] == a and c["type"] == "RECOMMENDATION_READY"]
-    check("device pulls RECOMMENDATION_READY with the recommendation", len(ready) == 1 and
+    _, changes, _ = pull_all(token)
+    ready = [c for c in changes if c["assessmentId"] == a and c["type"] == "RECOMMENDATION_READY"]
+    check("device pulls RECOMMENDATION_READY with the recommendation", len(ready) >= 1 and
           ready[0]["recommendation"]["sections"][0]["heading"] == "Stub guidance", ready)
     expected = {"GATEWAY_ACCEPTED", "PERSISTED", "ORCHESTRATION_STARTED", "RAG_RETURNED", "RECOMMENDATION_STORED", "DELIVERED"}
     check("every provenance stage from §12 is recorded, ending with DELIVERED", expected <= stages(evt["eventId"]),
@@ -109,7 +109,7 @@ try:
     check("RAG_RETURNED carries the corpus version as audit reference",
           one(f"select rag_audit_ref from audit.provenance where event_id = '{evt['eventId']}' and stage = 'RAG_RETURNED'")
           == "stub-0/extractive/hybrid")
-    _, again = http("GET", "/v1/sync/changes?cursor=0&limit=500", token=token)
+    pull_all(token)
     check("pulling again does not add a second DELIVERED row",
           one(f"select count(*) from audit.provenance where event_id = '{evt['eventId']}' and stage = 'DELIVERED'") == "1")
     check("recommendations.ready published through the outbox", wait(lambda: messages_for("recommendations.ready", a), 30))
@@ -184,8 +184,8 @@ try:
     push(evt4)
     check("ADVICE_DEFERRED change for the device",
           wait_for(f"select count(*) from sync.change_log where assessment_id = '{a4}' and change_type = 'ADVICE_DEFERRED'", "1", 90))
-    _, body = http("GET", "/v1/sync/changes?cursor=0&limit=500", token=token)
-    check("device pulls ADVICE_DEFERRED", any(c["assessmentId"] == a4 and c["type"] == "ADVICE_DEFERRED" for c in body["changes"]))
+    _, changes, _ = pull_all(token)
+    check("device pulls ADVICE_DEFERRED", any(c["assessmentId"] == a4 and c["type"] == "ADVICE_DEFERRED" for c in changes))
     retry = messages_for("wound-events.retry.30s", evt4["eventId"])
     check("message copied to wound-events.retry.30s with retry-count 1 and the original topic",
           len(retry) == 1 and "retry-count:1" in retry[0] and "original-topic:wound-events.persisted" in retry[0], retry)

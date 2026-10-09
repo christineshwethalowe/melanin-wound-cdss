@@ -3,6 +3,7 @@ using Npgsql;
 using NpgsqlTypes;
 using Orchestrator.Graph;
 using Sync.Common.Contracts;
+using Sync.Common.Evaluation;
 using Sync.Common.Kafka;
 using Sync.Common.Persistence;
 using Sync.Common.Recommendations;
@@ -10,16 +11,18 @@ using Sync.Common.Recommendations;
 namespace Orchestrator.Persistence;
 
 /// <summary>PostgreSQL implementation of <see cref="IOrchestratorStore"/> (architecture §9.3, §10.1).</summary>
-public sealed class PostgresOrchestratorStore(NpgsqlDataSource db) : IOrchestratorStore
+public sealed class PostgresOrchestratorStore(NpgsqlDataSource db, AblationOptions ablation) : IOrchestratorStore
 {
     public const string ConsumerName = "orchestrator";
 
     public async Task<bool> BeginAsync(OrchestrationJob job, CancellationToken ct)
     {
         await using var conn = await db.OpenConnectionAsync(ct);
-        await using (var check = new NpgsqlCommand(
-            "SELECT EXISTS (SELECT 1 FROM messaging.inbox WHERE consumer_name = @c AND event_id = @e)", conn))
+        // §13 ablation: the inbox is not consulted, so a repeated message runs the whole workflow again.
+        if (!ablation.Enabled)
         {
+            await using var check = new NpgsqlCommand(
+                "SELECT EXISTS (SELECT 1 FROM messaging.inbox WHERE consumer_name = @c AND event_id = @e)", conn);
             check.Parameters.AddWithValue("c", ConsumerName);
             check.Parameters.AddWithValue("e", job.Event.EventId);
             if ((bool)(await check.ExecuteScalarAsync(ct))!) return true;
@@ -111,6 +114,13 @@ public sealed class PostgresOrchestratorStore(NpgsqlDataSource db) : IOrchestrat
         await using var conn = await db.OpenConnectionAsync(ct);
         await using var tx = await conn.BeginTransactionAsync(ct);
         await AdvisoryLock.AcquireForAssessmentAsync(conn, tx, evt.AssessmentId, ct);
+
+        // §13 ablation: every recommendation the workflow would store, with no unique constraint. The real insert
+        // below still keeps one per (assessment, revision).
+        if (ablation.Enabled)
+            await ExecAsync(conn, tx, """
+                INSERT INTO ablation.recommendation (event_id, assessment_id, revision) VALUES (@e, @a, @r)
+                """, ct, ("e", evt.EventId), ("a", evt.AssessmentId), ("r", evt.Revision));
 
         int inserted;
         await using (var cmd = new NpgsqlCommand("""

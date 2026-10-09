@@ -10,7 +10,7 @@ using Npgsql;
 //   ServiceRoles__identity_svc=...  ServiceRoles__gateway_svc=...  (one per role in db/migrations/_roles)
 
 // _roles runs first so later migrations can grant to the service roles; grants runs last, when every table exists.
-string[] schemaOrder = ["_bootstrap", "_roles", "clinical", "messaging", "audit", "sync", "rag", "baseline", "grants"];
+string[] schemaOrder = ["_bootstrap", "_roles", "clinical", "messaging", "audit", "sync", "rag", "baseline", "ablation", "grants"];
 
 var connectionString = Environment.GetEnvironmentVariable("ConnectionStrings__Postgres")
     ?? "Host=localhost;Username=cdss;Password=cdss;Database=cdss";

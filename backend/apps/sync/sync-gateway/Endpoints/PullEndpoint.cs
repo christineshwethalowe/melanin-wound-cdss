@@ -45,34 +45,27 @@ public static class PullEndpoint
                 await save.ExecuteNonQueryAsync(ct);
             }
 
-            var changes = new List<ChangeDto>();
-            await using (var cmd = new NpgsqlCommand("""
-                SELECT cl.server_seq, cl.change_type, cl.assessment_id, cl.revision, r.mode, r.payload::text
-                FROM sync.change_log cl
-                LEFT JOIN clinical.recommendation r
-                  ON cl.change_type = 'RECOMMENDATION_READY'
-                 AND r.assessment_id = cl.assessment_id AND r.revision = cl.revision
-                WHERE cl.facility_id = @f
-                  AND (cl.server_seq > @c OR cl.created_at > now() - @w)
+            // (a) What comes after the cursor. Only these rows decide nextCursor and hasMore, so paging always moves
+            // forward. (Mixing the re-send window into the same LIMIT stalled the cursor under load: with more than
+            // `limit` recent changes, every page was filled with re-sent rows at or below the cursor.)
+            var fresh = await ReadChangesAsync(conn, """
+                WHERE cl.facility_id = @f AND cl.server_seq > @c
                 ORDER BY cl.server_seq
                 LIMIT @l
-                """, conn))
-            {
-                cmd.Parameters.AddWithValue("f", facility);
-                cmd.Parameters.AddWithValue("c", after);
-                cmd.Parameters.AddWithValue("w", ResendWindow);
-                cmd.Parameters.AddWithValue("l", take + 1);
-                await using var r = await cmd.ExecuteReaderAsync(ct);
-                while (await r.ReadAsync(ct))
-                {
-                    JsonElement? rec = r.IsDBNull(5) ? null : JsonDocument.Parse(r.GetString(5)).RootElement.Clone();
-                    changes.Add(new ChangeDto(r.GetInt64(0), r.GetString(1), r.GetGuid(2), r.GetInt32(3),
-                        r.IsDBNull(4) ? null : r.GetString(4), rec));
-                }
-            }
+                """, facility, after, take + 1, ct);
+            var hasMore = fresh.Count > take;
+            if (hasMore) fresh.RemoveAt(fresh.Count - 1);
 
-            var hasMore = changes.Count > take;
-            if (hasMore) changes.RemoveAt(changes.Count - 1);
+            // (b) The out-of-order guard: recent changes at or below the cursor are sent again, at most `limit` of
+            // them, nearest the cursor first (that is where a late commit lands). The device upserts, so repeats
+            // are harmless, and they never affect paging.
+            var resent = await ReadChangesAsync(conn, """
+                WHERE cl.facility_id = @f AND cl.server_seq <= @c AND cl.created_at > now() - @w
+                ORDER BY cl.server_seq DESC
+                LIMIT @l
+                """, facility, after, take, ct);
+            resent.Reverse();
+            var changes = resent.Concat(fresh).ToList();
 
             // Last provenance stage (§12): advice handed to the device. Once per event; a re-pull adds nothing.
             var delivered = changes.Where(c => c.Type == "RECOMMENDATION_READY").ToList();
@@ -92,11 +85,38 @@ public static class PullEndpoint
                 mark.Parameters.AddWithValue("r", delivered.Select(c => c.Revision).ToArray());
                 await mark.ExecuteNonQueryAsync(ct);
             }
-            var nextCursor = changes.Count == 0 ? after : Math.Max(after, changes.Max(c => c.Seq));
+            var nextCursor = fresh.Count == 0 ? after : Math.Max(after, fresh[^1].Seq);
 
             return Results.Ok(new { changes, nextCursor, hasMore });
         }).RequireAuthorization();
 
         return group;
+    }
+
+    private static async Task<List<ChangeDto>> ReadChangesAsync(NpgsqlConnection conn, string filter, string facility,
+        long cursor, int limit, CancellationToken ct)
+    {
+        await using var cmd = new NpgsqlCommand($"""
+            SELECT cl.server_seq, cl.change_type, cl.assessment_id, cl.revision, r.mode, r.payload::text
+            FROM sync.change_log cl
+            LEFT JOIN clinical.recommendation r
+              ON cl.change_type = 'RECOMMENDATION_READY'
+             AND r.assessment_id = cl.assessment_id AND r.revision = cl.revision
+            {filter}
+            """, conn);
+        cmd.Parameters.AddWithValue("f", facility);
+        cmd.Parameters.AddWithValue("c", cursor);
+        cmd.Parameters.AddWithValue("w", ResendWindow);
+        cmd.Parameters.AddWithValue("l", limit);
+
+        var changes = new List<ChangeDto>();
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        while (await r.ReadAsync(ct))
+        {
+            JsonElement? rec = r.IsDBNull(5) ? null : JsonDocument.Parse(r.GetString(5)).RootElement.Clone();
+            changes.Add(new ChangeDto(r.GetInt64(0), r.GetString(1), r.GetGuid(2), r.GetInt32(3),
+                r.IsDBNull(4) ? null : r.GetString(4), rec));
+        }
+        return changes;
     }
 }
