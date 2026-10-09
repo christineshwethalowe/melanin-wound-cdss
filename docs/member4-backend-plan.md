@@ -29,7 +29,7 @@ and the pipeline recovered when Kafka came back.
 | 9 | Per-service database roles (least privilege) | §9.4, §12 | ✅ |
 | 10 | Evaluation harness: device simulator, faults, metrics | §13 | ✅ |
 | 11 | Observability: OpenTelemetry, Prometheus, Grafana | §13 | ✅ |
-| 12 | Mobile: Drift queue + sync engine | §6 | ⬜ |
+| 12 | Mobile: Drift queue + sync engine | §6 | ✅ (to verify on a device: see below) |
 
 ### Architecture v2.1 changes (done before phase 6)
 
@@ -91,6 +91,88 @@ phase 12 points the app at the single edge URL.
 **Verified:** `python tests/integration/e2e_step2_auth_admin.py` (44 checks) and the gateway unit tests
 (RFC 6238 test vectors, encryption binding). Known limit: a deactivated clinician's access token stays valid
 until it expires (at most 15 minutes); refresh is refused immediately.
+
+### Phase 1c: device revocation (§12: "devices are registered and can be revoked") ✅
+
+- `GET /v1/admin/devices`: the facility's devices with registration time, revocation time, active sessions and
+  the last clinician who used each one.
+- `POST /v1/admin/devices/{deviceId}/revoke`: for a lost or stolen phone. In one transaction it sets
+  `clinical.device.revoked_at`, ends every session on the device and writes `DEVICE_REVOKE` to `audit.auth_audit`
+  with the admin as actor. Devices of another facility are 404; revoking twice is 409 `DEVICE_ALREADY_REVOKED`.
+  Revocation is permanent: a recovered phone is re-enrolled under a new device id.
+- Effect: login on the device is refused (`DEVICE_NOT_ALLOWED`, which the app already explains). Refresh is
+  refused immediately: it checks the device as well as the session. The Sync Gateway also refuses the device's
+  unexpired access tokens, because `DeviceRevocationCheck` looks up `revoked_at` after the signature is validated.
+  The answer per device is cached for 30 s, so revocation takes effect within 30 s instead of the token's
+  15 minutes, at the cost of at most one lookup per device every 30 s. Admin-dashboard tokens have no device
+  and skip the check.
+- Migrations: `audit/0004_auth_audit_device_revoke.sql`, `grants/0004_device_revocation.sql` (identity may set
+  `revoked_at` and nothing else on `clinical.device`; the gateway may read `device_id, revoked_at` only).
+
+**Verified:** `python tests/integration/e2e_device_revocation.py` (21 checks), plus 5 new checks in
+`e2e_db_roles.py` for the column grants.
+
+### Phase 1d: housekeeping (§9.4: outbox, change log and inbox are short-lived by design) ✅
+
+A separate worker, `backend/apps/sync/housekeeping`, with its own database login `housekeeping_svc`. One cycle every
+10 minutes, in batches of 5,000 rows. An advisory lock means that if it is ever scaled out, only one instance works at
+a time. `docker compose run --rm housekeeping run-once` runs one cycle by hand.
+
+| Table | Rule | Default |
+|---|---|---|
+| `messaging.outbox` | Published rows older than the retention are deleted. Unpublished rows are never touched. | 1 hour |
+| `sync.change_log` | Moved to `sync.change_log_archive` once **every device of the facility that is not revoked** has a cursor at or past the row (a device that has never pulled counts as 0), and the row is older than the margin | 24 hours (minimum 10 minutes, far above pull's 60 s re-send window) |
+| `messaging.inbox` | Rows older than the redelivery window are deleted. The window is read from Kafka: the longest `retention.ms` of the topics the orchestrator reads (persisted, both retry topics, DLQ) plus one day, never less than the configured minimum. If Kafka cannot be asked, or a topic is kept forever, nothing is deleted. | 8 days (Kafka's 7 + 1) |
+
+- Why no device can miss a change: pull returns rows after the cursor the device sends, and the server records that
+  cursor (`sync.device_cursor`). A row is archived only when it is at or below every active device's recorded cursor,
+  so every one of them has already applied it. The margin also covers rows that commit out of sequence order.
+- A phone that has stopped syncing holds its facility's archival back. Each cycle logs which device it is ("revoke it
+  if the phone is lost"); revoking it (phase 1c) releases the rows. A phone enrolled later starts from the archival
+  point: it does not receive the ward's archived history.
+- Metric `sync_housekeeping_rows_total{table}` (outbox, change_log, inbox).
+- Migrations: `_roles/0002` (role), `messaging/0002` (age indexes), `sync/0002` (archive table), `grants/0005`
+  (housekeeping may delete outbox/inbox/change-log rows and read only the columns its rules use; no payloads,
+  no clinical data, cannot change devices or the archive).
+- First run on the development database: the 18,611 published outbox rows were deleted. No inbox row was older than
+  8 days. No change-log row was archived, because test devices that never pulled still hold `fac-001`, as the
+  rule intends.
+
+**Verified:** `python tests/integration/e2e_housekeeping.py` (21 checks: a lost phone holds archival back until it is
+revoked; only rows every phone acknowledged are archived; the phone behind resumes and receives every later row;
+a whole-database check finds no archived row ahead of any active device's cursor; outbox and inbox rules).
+16 new checks in `e2e_db_roles.py`, 8 unit tests in `Housekeeping.Tests` (retention policy, option validation).
+
+### Phase 1e: auth-health metrics (§13 metric table: "login failure rate, lockouts per day, average session lifetime") ✅
+
+- **Definitions** (the same in `metrics.py` and on the dashboard):
+  - *Login failure rate* = failed attempts / attempts. A `LOCKOUT` row is the failed attempt that locked the account,
+    so it counts as a failure. `MFA_REQUIRED` is the server asking for a code, not a failed attempt, so it counts as
+    neither (the lockout counter ignores it too).
+  - *Lockouts per day* = `LOCKOUT` events in 24 hours.
+  - *Session lifetime*: a session is a login plus its chain of refreshes. Refresh rotates the token by ending one
+    `clinician_session` row and issuing another, so the new `family_id` column links them: a login starts a family,
+    each refresh carries it on (`clinical/0009_session_family.sql`, with a default so the previous service version
+    still works). Lifetime = login to logout or revocation (logout, deactivation, device revocation). Sessions whose
+    refresh token expired unused are counted apart, because their last use is not recorded precisely.
+- **Identity service** (`AuthMetrics`, `AuthHealthSampler`): every `audit.auth_audit` write also increments
+  `auth_events_total{action, success, reason}`. Once a minute the sampler reads the session table and exports
+  `auth_sessions_active{client}`, `auth_session_lifetime_seconds{client, state=active|ended}` and
+  `auth_sessions_ended{client, how=revoked|expired}` for the last 24 hours. The counter series the dashboard reads are
+  created at 0 on startup, because Prometheus' `increase()` ignores the first value of a new series.
+- **Grafana**: new row "Auth health" with login failure rate, lockouts per day, average session lifetime (mobile,
+  ended in 24 h), active sessions, login attempts by result, and lifetime by client.
+- **`metrics.py`**: `auth_health(since, until)` returns logins, failures, lockouts, MFA prompts, failure rate,
+  lockouts per day, failures by reason, and sessions started, ended and active at the end, with mean and median
+  lifetime. Every evaluation run includes it, and summary.csv gains `login_failure_rate` and `lockouts`.
+  `python tests/evaluation/metrics.py auth [hours]` prints it for any period.
+- `run_experiment.py` now starts simulated devices at the head of the change log *or* its archive, because
+  housekeeping may archive an idle facility's newest rows.
+
+**Verified:** `python tests/integration/e2e_auth_health.py` (17 checks): known traffic gives exactly 2 logins,
+5 failures, 1 lockout and rate 5/7. The MFA prompt is not counted. A refresh stays in its login's family. The logout
+gives a lifetime of about 3 s across the refresh. The counters and gauges reach Prometheus. Every new dashboard query
+evaluates in Prometheus.
 
 ## Phase 2: Push
 
@@ -203,7 +285,7 @@ Recommendation Service the baseline makes the device wait 3 s while push answers
 - One login role per service. `audit.provenance` and `audit.auth_audit` are insert-only.
   Only the identity service can read `clinical.clinician_credential` (v2.1: was the gateway). The `rag` role sees only `rag`.
 
-✅ **Verified:** `python tests/integration/e2e_db_roles.py` (63 checks: each service is connected under its own role;
+✅ **Verified:** `python tests/integration/e2e_db_roles.py` (84 checks: each service is connected under its own role;
 only `identity_svc` reads credentials; nobody can UPDATE, DELETE or TRUNCATE the audit tables; `rag_svc` sees only
 `rag`; column-level writes such as the orchestrator changing only `wound_assessment.status`). Every other suite
 passes with the services running under these roles, which shows the grants are sufficient.
@@ -315,3 +397,15 @@ Prometheus http://localhost:9090.
 
 - Drift queue repository, leases, sync engine in a background isolate, login, pull, SQLCipher.
   Needs Flutter installed.
+
+**12a ✅** (`mobile/lib/features/sync`, details in `mobile/README.md`): queue repository, SQLCipher database with the
+key in the keystore, wound-event validator, auth session, API client and sync engine. 38 tests without a device,
+including §14.1 step 3 (1,000 saves survive a kill mid-sync) and step 4 (a flaky gateway never causes a lost or
+stuck row), plus an integration test against the Docker backend.
+
+**12b ✅:** sync triggers (`SyncScheduler`: connectivity regained, foreground, 2 s after a save, pull-to-refresh,
+periodic, retry at the engine's time), sign-in (with MFA) and sync-status screens, a "save sample assessment" button
+standing in for the capture flow of Members 1–2, and the app wiring (`AppServices`, `main.dart`). 48 tests in all.
+
+**To verify on a device** (no Android SDK platform here): the app on an emulator or phone (steps in
+`mobile/README.md`), the §13 frame-time metric, and Android periodic background sync (WorkManager, not built).

@@ -15,7 +15,8 @@ x-backend: &backend
   # The owner login below is used only by db-migrate. Every service overrides it with its own role (plan phase 9,
   # db/migrations/_roles and grants); passwords are local-dev defaults, set real ones in .env.
   # Pool sizes are bounded so all services together stay under PostgreSQL's 100 connections, even with the
-  # persister and relay scaled to two replicas: identity 20, gateway 30, persister 10, relay 5, orchestrator 10.
+  # persister and relay scaled to two replicas: identity 20, gateway 30, persister 10, relay 5, orchestrator 10,
+  # housekeeping 2.
   environment: &backend-env
     ConnectionStrings__Postgres: "Host=postgres;Username=${POSTGRES_USER:-cdss};Password=${POSTGRES_PASSWORD:-cdss};Database=${POSTGRES_DB:-cdss}"
     Kafka__BootstrapServers: "kafka:9092"
@@ -86,6 +87,17 @@ services:
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
     depends_on: [kafka]
 
+  # PostgreSQL in a web page, for debugging like kafka-ui (port 5432 itself is the database protocol, not HTTP):
+  # http://localhost:8082/?pgsql=postgres&username=cdss&db=cdss, then the POSTGRES_PASSWORD from .env (cdss by
+  # default). Bound to this machine only; it can change data, so never expose it.
+  adminer:
+    image: adminer:4
+    ports:
+      - "127.0.0.1:8082:8080"
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+    depends_on: [postgres]
+
   # ---- One-shot setup jobs --------------------------------------------------------------------
 
   # Topics from §8.1 (same list as infra/kafka/create-topics.sh). Safe to run again.
@@ -97,8 +109,10 @@ services:
     entrypoint: ["/bin/bash", "-c"]
     command:
       - |
-        set -e
-        t() { /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic "$$1" --partitions "$$2" --replication-factor 1; }
+        set -eo pipefail
+        # kafka-topics.sh warns about every topic name with a '.', even one that already exists. The §8.1 names use
+        # '.' and '-' but never '_', so they cannot collide: drop that one line, keep every other message and failure.
+        t() { /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic "$$1" --partitions "$$2" --replication-factor 1 2>&1 | { grep -v "Due to limitations in metric names" || true; }; }
         t wound-events 6
         t wound-events.persisted 6
         t recommendations.ready 3
@@ -126,6 +140,7 @@ services:
       ServiceRoles__relay_svc: ${DB_PASSWORD_RELAY:-relay-local-dev}
       ServiceRoles__orchestrator_svc: ${DB_PASSWORD_ORCHESTRATOR:-orchestrator-local-dev}
       ServiceRoles__rag_svc: ${DB_PASSWORD_RAG:-rag-local-dev}
+      ServiceRoles__housekeeping_svc: ${DB_PASSWORD_HOUSEKEEPING:-housekeeping-local-dev}
     depends_on:
       postgres:
         condition: service_healthy
@@ -149,8 +164,9 @@ services:
     entrypoint: ["sh", "-c"]
     command:
       - |
-        dotnet IdentityService.dll create-clinician admin.demo Demo-Admin-2026! admin fac-001 Demo Admin || true
-        dotnet IdentityService.dll create-clinician n.silva Demo-Pass-2026! nurse fac-001 N. Silva || true
+        set -e
+        dotnet IdentityService.dll create-clinician --if-not-exists admin.demo Demo-Admin-2026! admin fac-001 Demo Admin
+        dotnet IdentityService.dll create-clinician --if-not-exists n.silva Demo-Pass-2026! nurse fac-001 N. Silva
 
   # ---- Member 4 backend units (§4) ------------------------------------------------------------
 
@@ -239,6 +255,21 @@ services:
     environment:
       <<: *backend-env
       ConnectionStrings__Postgres: "Host=postgres;Database=${POSTGRES_DB:-cdss};Username=relay_svc;Password=${DB_PASSWORD_RELAY:-relay-local-dev};Maximum Pool Size=5"
+
+  # Outbox cleanup, change-log archival and inbox retention (§9.4). One cycle every 10 minutes; one instance is
+  # enough (an advisory lock keeps extra replicas idle). Run a cycle by hand:
+  #   docker compose run --rm housekeeping run-once
+  housekeeping:
+    <<: *backend
+    image: melanin-wound-cdss/housekeeping
+    build:
+      <<: *backend-build
+      args:
+        PROJECT: backend/apps/sync/housekeeping/Housekeeping.csproj
+        ENTRY: Housekeeping.dll
+    environment:
+      <<: *backend-env
+      ConnectionStrings__Postgres: "Host=postgres;Database=${POSTGRES_DB:-cdss};Username=housekeeping_svc;Password=${DB_PASSWORD_HOUSEKEEPING:-housekeeping-local-dev};Maximum Pool Size=2"
 
   orchestrator:
     <<: *backend

@@ -146,7 +146,7 @@ public sealed class AuthService(NpgsqlDataSource db, PasswordHasher hasher, JwtT
         await Sql.ExecAsync(conn, tx,
             "UPDATE clinical.clinician_credential SET failed_attempts = 0, locked_until = NULL WHERE clinician_id = @id",
             ct, ("id", clinicianId));
-        var pair = await IssueSessionAsync(conn, tx, clinicianId, deviceId, facilityId, role, client, ct);
+        var pair = await IssueSessionAsync(conn, tx, clinicianId, deviceId, facilityId, role, client, null, ct);
         await AuthAudit.WriteAsync(conn, tx, "LOGIN", username, clinicianId, deviceId, true, null, ct);
         await tx.CommitAsync(ct);
         return AuthResult.Ok(pair);
@@ -204,7 +204,7 @@ public sealed class AuthService(NpgsqlDataSource db, PasswordHasher hasher, JwtT
         var s = session.Value;
         await Sql.ExecAsync(conn, tx, "UPDATE clinical.clinician_session SET revoked_at = now() WHERE session_id = @s",
             ct, ("s", s.SessionId));
-        var pair = await IssueSessionAsync(conn, tx, s.ClinicianId, s.DeviceId, s.FacilityId, s.Role, s.Client, ct);
+        var pair = await IssueSessionAsync(conn, tx, s.ClinicianId, s.DeviceId, s.FacilityId, s.Role, s.Client, s.FamilyId, ct);
         await AuthAudit.WriteAsync(conn, tx, "REFRESH", s.Username, s.ClinicianId, s.DeviceId, true, null, ct);
         await tx.CommitAsync(ct);
         return AuthResult.Ok(pair);
@@ -225,36 +225,40 @@ public sealed class AuthService(NpgsqlDataSource db, PasswordHasher hasher, JwtT
         await tx.CommitAsync(ct);
     }
 
+    /// <param name="familyId">The session family a refresh continues; null for a login, which starts a new one.</param>
     private async Task<TokenPair> IssueSessionAsync(NpgsqlConnection conn, NpgsqlTransaction tx,
-        Guid clinicianId, string? deviceId, string facilityId, string role, string client, CancellationToken ct)
+        Guid clinicianId, string? deviceId, string facilityId, string role, string client, Guid? familyId,
+        CancellationToken ct)
     {
         var (raw, hash) = JwtTokenService.CreateRefreshToken();
         await Sql.ExecAsync(conn, tx, """
             INSERT INTO clinical.clinician_session
-                (clinician_id, device_id, client_id, refresh_token_hash, expires_at, last_seen_at)
-            VALUES (@c, @d, @client, @h, @e, now())
+                (clinician_id, device_id, client_id, refresh_token_hash, expires_at, last_seen_at, family_id)
+            VALUES (@c, @d, @client, @h, @e, now(), COALESCE(@family, gen_random_uuid()))
             """, ct, ("c", clinicianId), ("d", deviceId), ("client", client), ("h", hash),
-            ("e", DateTime.UtcNow + tokens.RefreshTokenLifetime(client)));
+            ("e", DateTime.UtcNow + tokens.RefreshTokenLifetime(client)), ("family", familyId));
 
         return new TokenPair(tokens.CreateAccessToken(clinicianId, deviceId, facilityId, role, client), raw,
             tokens.AccessTokenSeconds);
     }
 
     private static async Task<(Guid SessionId, Guid ClinicianId, string? DeviceId, string FacilityId, string Role,
-        string Username, string Client)?>
+        string Username, string Client, Guid FamilyId)?>
         FindActiveSessionAsync(NpgsqlConnection conn, NpgsqlTransaction tx, string refreshToken, CancellationToken ct)
     {
         await using var cmd = new NpgsqlCommand("""
-            SELECT s.session_id, c.clinician_id, s.device_id, c.facility_id, c.role, c.username, s.client_id
+            SELECT s.session_id, c.clinician_id, s.device_id, c.facility_id, c.role, c.username, s.client_id, s.family_id
             FROM clinical.clinician_session s
             JOIN clinical.clinician c USING (clinician_id)
+            LEFT JOIN clinical.device d ON d.device_id = s.device_id
             WHERE s.refresh_token_hash = @h AND s.revoked_at IS NULL AND s.expires_at > now() AND c.active
+              AND (s.device_id IS NULL OR d.revoked_at IS NULL)
             FOR UPDATE OF s
             """, conn, tx);
         cmd.Parameters.AddWithValue("h", JwtTokenService.HashRefreshToken(refreshToken));
         await using var r = await cmd.ExecuteReaderAsync(ct);
         if (!await r.ReadAsync(ct)) return null;
         return (r.GetGuid(0), r.GetGuid(1), r.IsDBNull(2) ? null : r.GetString(2), r.GetString(3), r.GetString(4),
-            r.GetString(5), r.GetString(6));
+            r.GetString(5), r.GetString(6), r.GetGuid(7));
     }
 }

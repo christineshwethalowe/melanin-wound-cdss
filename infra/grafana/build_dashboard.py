@@ -3,7 +3,8 @@ Generates infra/grafana/dashboards/sync-pipeline.json (plan phase 11). Edit this
 
     python infra/grafana/build_dashboard.py
 
-Every query uses metric and label names checked against Prometheus: sync_* from Sync.Common SyncMetrics,
+Every query uses metric and label names checked against Prometheus: sync_* from Sync.Common SyncMetrics, auth_* from
+the identity service's AuthMetrics,
 http_* from OpenTelemetry's ASP.NET Core / HttpClient instrumentation, kafka_consumergroup_lag from kafka-exporter.
 """
 import json
@@ -24,8 +25,8 @@ def ts(title, exprs, unit="short", w=12, h=8, x=0, desc=""):
     })
 
 
-def stat(title, expr, unit="short", x=0, w=6, desc="", color="green"):
-    expr = f"round({expr})"
+def stat(title, expr, unit="short", x=0, w=6, desc="", color="green", nearest=None):
+    expr = f"round({expr}, {nearest})" if nearest else f"round({expr})"
     panels.append({
         "type": "stat", "title": title, "description": desc, "datasource": DS,
         "gridPos": {"x": x, "y": y, "w": w, "h": 4},
@@ -92,6 +93,29 @@ ts("Requests / s by service and route", [
 ts("5xx responses / s by service", [
     ('sum by (service_name) (rate(http_server_request_duration_seconds_count{http_response_status_code=~"5.."}[1m])) or vector(0)',
      "{{service_name}}")], unit="reqps", x=12)
+y += 8
+
+row("Auth health (§13: login failure rate, lockouts per day, average session lifetime)")
+stat("Login failure rate", '(sum(increase(auth_events_total{action="LOGIN",success="false",reason!="MFA_REQUIRED"}[$__range])) + sum(increase(auth_events_total{action="LOCKOUT"}[$__range]) or vector(0))) / sum(increase(auth_events_total{action=~"LOGIN|LOCKOUT",reason!="MFA_REQUIRED"}[$__range]))', unit="percentunit", nearest=0.001, x=0, color="orange",
+     desc="Failed login attempts / attempts over the range. A LOCKOUT is the failed attempt that locked the account; "
+          "MFA_REQUIRED (the server asking for a code) is not an attempt")
+stat("Lockouts per day", 'sum(increase(auth_events_total{action="LOCKOUT"}[1d])) or vector(0)', x=6, color="red",
+     desc="Accounts locked after 5 failed attempts, over the last 24 hours")
+stat("Average session lifetime (ended, 24 h)", 'max(auth_session_lifetime_seconds{state="ended",client="mobile"})',
+     unit="s", x=12, color="blue",
+     desc="Mobile sessions (a login and its refreshes) that ended by logout or revocation in the last 24 h: login to end. "
+          "Sampled from the database once a minute")
+stat("Active sessions", 'sum(max by (client) (auth_sessions_active))', x=18,
+     desc="Logins whose session is still valid, all clients")
+y += 4
+ts("Login attempts / s by result", [
+    ('sum by (reason) (rate(auth_events_total{action=~"LOGIN|LOCKOUT",success="false",reason!="MFA_REQUIRED"}[5m]))',
+     "failed: {{reason}}"),
+    ('sum(rate(auth_events_total{action="LOGIN",success="true"}[5m]))', "succeeded")], unit="reqps", x=0,
+   desc="INVALID_CREDENTIALS, INVALID_TOTP, CREDENTIAL_LOCKED, DEVICE_NOT_ALLOWED, CLIENT_NOT_ALLOWED")
+ts("Average session lifetime by client", [
+    ('max by (client, state) (auth_session_lifetime_seconds)', "{{client}} {{state}}")], unit="s", x=12,
+   desc="active: average age of valid sessions; ended: login to logout or revocation, sessions ended in 24 h")
 y += 8
 
 dashboard = {

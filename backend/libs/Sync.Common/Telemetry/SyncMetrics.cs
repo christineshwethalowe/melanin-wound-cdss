@@ -30,6 +30,10 @@ public static class SyncMetrics
     public static readonly Counter<long> OrchestrationOutcomes =
         Meter.CreateCounter<long>("sync.orchestration.outcomes", "{run}", "Orchestrator workflow outcomes");
 
+    /// <summary>Housekeeping (§9.4) per table: outbox (deleted), change_log (archived), inbox (deleted).</summary>
+    public static readonly Counter<long> HousekeepingRows =
+        Meter.CreateCounter<long>("sync.housekeeping.rows", "{row}", "Rows removed by housekeeping");
+
     public static readonly Histogram<double> OrchestrationDuration =
         Meter.CreateHistogram<double>("sync.orchestration.duration", "s", "One orchestrator workflow run");
 }

@@ -69,9 +69,8 @@ foreach (var schema in schemaOrder)
     }
 }
 
-Console.WriteLine(count == 0 ? "Database is up to date." : $"Applied {count} migration(s).");
-
 // Set each service role's password from ServiceRoles__<role>. A role without one cannot log in.
+var rolesSet = new List<string>();
 foreach (var (key, password) in Environment.GetEnvironmentVariables().Cast<System.Collections.DictionaryEntry>()
              .Select(e => ((string)e.Key, (string?)e.Value))
              .Where(e => e.Item1.StartsWith("ServiceRoles__", StringComparison.Ordinal) && !string.IsNullOrEmpty(e.Item2))
@@ -86,17 +85,26 @@ foreach (var (key, password) in Environment.GetEnvironmentVariables().Cast<Syste
     if (await build.ExecuteScalarAsync() is not string alter)
         throw new InvalidOperationException($"ServiceRoles__{role} is set, but no role {role} exists (see db/migrations/_roles).");
     await Exec(conn, null, alter);
-    Console.WriteLine($"password set for {role}");
+    rolesSet.Add(role);
 }
 
+var seeded = new List<string>();
 if (args.Contains("--seed"))
 {
     foreach (var file in Directory.GetFiles(Path.Combine(root, "db", "seed"), "*.sql").Order(StringComparer.Ordinal))
     {
         await Exec(conn, null, await File.ReadAllTextAsync(file));
-        Console.WriteLine($"seeded {Path.GetFileName(file)}");
+        seeded.Add(Path.GetFileName(file));
     }
 }
+
+// One line per run: each applied migration is listed above it, everything routine is summarised here.
+Console.WriteLine(string.Join("; ", new[]
+{
+    count == 0 ? "Database is up to date" : $"Applied {count} migration(s)",
+    rolesSet.Count == 0 ? null : $"passwords set for {rolesSet.Count} service roles ({string.Join(", ", rolesSet)})",
+    seeded.Count == 0 ? null : $"seeded {string.Join(", ", seeded)}",
+}.Where(part => part is not null)) + ".");
 
 static async Task Exec(NpgsqlConnection conn, NpgsqlTransaction? tx, string sql)
 {

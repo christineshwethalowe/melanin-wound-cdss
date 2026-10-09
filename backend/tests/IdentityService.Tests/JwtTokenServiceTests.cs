@@ -98,4 +98,38 @@ public class JwtTokenServiceTests
         var pem = rsa.ExportPkcs8PrivateKeyPem();
         Assert.Equal(new SigningKey(pem).PublicKey.KeyId, new SigningKey(pem).PublicKey.KeyId);
     }
+
+    public static TheoryData<string> PemEncodings => new() { "escaped", "single-line", "quoted", "base64", "pkcs1-escaped", "file" };
+
+    [Theory]
+    [MemberData(nameof(PemEncodings))]
+    public void Pem_mangled_by_env_files_still_loads(string encoding)
+    {
+        using var rsa = RSA.Create(2048);
+        var pem = rsa.ExportPkcs8PrivateKeyPem();
+        var file = Path.GetTempFileName();
+        File.WriteAllText(file, pem);
+        try
+        {
+            var value = encoding switch
+            {
+                "escaped" => pem.Replace("\n", "\\n"),
+                "single-line" => pem.Replace("\n", " "),
+                "quoted" => $"\"{pem.Replace("\n", "\\n")}\"",
+                "base64" => Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(pem)),
+                "pkcs1-escaped" => rsa.ExportRSAPrivateKeyPem().Replace("\n", "\\n"),
+                _ => file,
+            };
+            Assert.Equal(new SigningKey(pem).PublicKey.KeyId, new SigningKey(value).PublicKey.KeyId);
+        }
+        finally { File.Delete(file); }
+    }
+
+    [Fact]
+    public void Unparseable_key_fails_without_echoing_it()
+    {
+        var e = Assert.Throws<InvalidOperationException>(() => new SigningKey("not-a-key-secret123"));
+        Assert.Contains("Jwt:SigningKeyPem", e.Message);
+        Assert.DoesNotContain("secret123", e.Message);
+    }
 }

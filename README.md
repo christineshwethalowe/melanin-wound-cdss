@@ -109,11 +109,17 @@ dotnet run --project backend/apps/api-gateway --urls http://localhost:8080   # r
 dotnet run --project backend/apps/sync/ingest-persister
 dotnet run --project backend/apps/sync/outbox-relay
 
+# everything non-disruptive in one go, with a pass/fail summary (add --unit, --mobile or --all)
+python tests/check_backend.py
+
 # end-to-end check: login → push → Kafka → PostgreSQL → outbox → pull
 python tests/integration/e2e_smoke.py
 
 # registration, MFA, patient alias and audit trail (build step 2)
 python tests/integration/e2e_step2_auth_admin.py
+
+# device revocation (§12): a revoked phone cannot log in or refresh, and its access token is refused within 30 s
+python tests/integration/e2e_device_revocation.py
 
 # admin dashboard sessions: no device, admins only, refused by the Sync Gateway (ADR 0005)
 python tests/integration/e2e_dashboard_client.py
@@ -134,6 +140,14 @@ dotnet run --project tests/device-simulator -- --devices 10 --events 20
 # evaluation scenarios (§13): faults through Toxiproxy, event-driven vs baseline, metrics into results/summary.csv
 docker compose --profile tools up -d toxiproxy
 python tests/evaluation/run_experiment.py loss --devices 10 --events 10
+
+# auth health (§13): login failure rate, lockouts per day, average session lifetime (metrics.py + Grafana)
+python tests/integration/e2e_auth_health.py
+python tests/evaluation/metrics.py auth 24      # the same numbers for the last 24 hours
+
+# housekeeping (§9.4): outbox cleanup, change-log archival (no device misses a change), inbox retention
+python tests/integration/e2e_housekeeping.py
+docker compose run --rm housekeeping run-once   # one cycle by hand; prints what it removed
 
 # per-service database roles: insert-only audit, credentials readable only by the identity service
 python tests/integration/e2e_db_roles.py
@@ -159,7 +173,8 @@ Outside local development, set these for the identity service instead of using t
 
 Each service logs in to PostgreSQL with its own least-privilege role (plan phase 9). Docker uses local-dev
 passwords; outside a laptop demo set `DB_PASSWORD_IDENTITY`, `DB_PASSWORD_GATEWAY`, `DB_PASSWORD_PERSISTER`,
-`DB_PASSWORD_RELAY`, `DB_PASSWORD_ORCHESTRATOR` and `DB_PASSWORD_RAG` in `.env`; db-migrate applies them.
+`DB_PASSWORD_RELAY`, `DB_PASSWORD_ORCHESTRATOR`, `DB_PASSWORD_RAG` and `DB_PASSWORD_HOUSEKEEPING` in `.env`;
+db-migrate applies them.
 
 Progress and next steps for the backend: [docs/member4-backend-plan.md](docs/member4-backend-plan.md)
 

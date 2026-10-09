@@ -10,7 +10,11 @@ tables). Both clocks are this host's, which is why the simulator runs on the sam
     ablation              with Ablation__Enabled, the shadow tables: extra rows a store without the unique
                           constraint, the gateway's DUPLICATE check and the inbox would hold (§13)
     auditability          events whose provenance has every expected stage / all events
-    auth health           login failures and lockouts during the run window
+    auth health           §13 table: login failure rate, lockouts per day, average session lifetime (auth_health)
+
+Auth health on its own, for any period (default: the last 24 hours):
+
+    python tests/evaluation/metrics.py auth [hours]
 """
 import csv
 import statistics
@@ -127,12 +131,7 @@ def collect(run_id, mode, sim_csv_path, started_at, finished_at):
             "recommendation_extra_rows": shadow["recommendation_rows"] - shadow["recommendation_events"],
             **shadow}
 
-    auth = psql_csv(f"""
-        select count(*) filter (where action = 'LOGIN' and not success) as login_failures,
-               count(*) filter (where action = 'LOGIN' and success) as logins,
-               count(*) filter (where action = 'LOCKOUT') as lockouts
-        from audit.auth_audit
-        where recorded_at between '{started_at.isoformat()}' and '{finished_at.isoformat()}'""")[0]
+    auth = auth_health(started_at, finished_at)
 
     to_float = lambda v: float(v) if v not in (None, "") else None
     metrics = {
@@ -147,9 +146,64 @@ def collect(run_id, mode, sim_csv_path, started_at, finished_at):
         },
         "duplicates": duplicates,
         "auditability": audit,
-        "auth": {k: int(v) for k, v in auth.items()},
+        "auth": auth,
     }
     return metrics, events
+
+
+def auth_health(since, until):
+    """
+    The §13 auth-health metrics for [since, until], from audit.auth_audit and clinical.clinician_session.
+
+    login failure rate    failed attempts / attempts. A LOCKOUT row is the failed attempt that locked the account, so
+                          it counts as a failure. MFA_REQUIRED is the server asking for a code, not a failed attempt,
+                          so it is left out of both (the 5-attempt lockout ignores it too).
+    lockouts per day      lockouts in the period, scaled to 24 hours
+    session lifetime      a session is a login and its chain of refreshes (one family_id). For sessions that started
+                          in the period: the mean and median time from login to logout or revocation for those that
+                          ended in it, and how many are still active at the end
+    """
+    window = f"'{since.isoformat()}' and '{until.isoformat()}'"
+    a = psql_csv(f"""
+        select count(*) filter (where action = 'LOGIN' and success) as logins,
+               count(*) filter (where (action = 'LOGIN' and not success and reason_code is distinct from 'MFA_REQUIRED')
+                                   or action = 'LOCKOUT') as login_failures,
+               count(*) filter (where action = 'LOCKOUT') as lockouts,
+               count(*) filter (where action = 'LOGIN' and reason_code = 'MFA_REQUIRED') as mfa_prompts
+        from audit.auth_audit where recorded_at between {window}""")[0]
+    reasons = psql_csv(f"""
+        select coalesce(reason_code, 'none') as reason, count(*) as n from audit.auth_audit
+        where recorded_at between {window} and not success and action in ('LOGIN', 'LOCKOUT')
+          and reason_code is distinct from 'MFA_REQUIRED'
+        group by 1 order by 2 desc""")
+    s = psql_csv(f"""
+        with fam as (
+            select family_id, min(issued_at) as started_at,
+                   (array_agg(revoked_at order by issued_at desc))[1] as ended_at,
+                   (array_agg(expires_at order by issued_at desc))[1] as expires_at
+            from clinical.clinician_session group by family_id
+            having min(issued_at) between {window})
+        select count(*) as started,
+               count(*) filter (where ended_at <= '{until.isoformat()}') as ended,
+               count(*) filter (where (ended_at is null or ended_at > '{until.isoformat()}')
+                                   and expires_at > '{until.isoformat()}') as active_at_end,
+               round(avg(extract(epoch from ended_at - started_at)) filter (where ended_at <= '{until.isoformat()}'), 1)
+                   as mean_lifetime_s,
+               round((percentile_cont(0.5) within group (order by extract(epoch from ended_at - started_at))
+                   filter (where ended_at <= '{until.isoformat()}'))::numeric, 1) as median_lifetime_s
+        from fam""")[0]
+
+    logins, failures, lockouts = int(a["logins"]), int(a["login_failures"]), int(a["lockouts"])
+    days = max((until - since).total_seconds(), 1) / 86400
+    num = lambda v: float(v) if v not in (None, "") else None
+    return {
+        "logins": logins, "login_failures": failures, "lockouts": lockouts, "mfa_prompts": int(a["mfa_prompts"]),
+        "login_failure_rate": round(failures / (logins + failures), 4) if logins + failures else None,
+        "lockouts_per_day": round(lockouts / days, 2),
+        "failures_by_reason": {r["reason"]: int(r["n"]) for r in reasons},
+        "sessions": {"started": int(s["started"]), "ended": int(s["ended"]), "active_at_end": int(s["active_at_end"]),
+                     "mean_lifetime_s": num(s["mean_lifetime_s"]), "median_lifetime_s": num(s["median_lifetime_s"])},
+    }
 
 
 def write_events_csv(path, events):
@@ -159,3 +213,15 @@ def write_events_csv(path, events):
         w = csv.DictWriter(f, fieldnames=list(events[0].keys()))
         w.writeheader()
         w.writerows(events)
+
+
+if __name__ == "__main__":
+    import json
+    import sys
+    from datetime import datetime, timedelta, timezone
+
+    if len(sys.argv) < 2 or sys.argv[1] != "auth":
+        sys.exit(__doc__)
+    hours = float(sys.argv[2]) if len(sys.argv) > 2 else 24
+    until = datetime.now(timezone.utc)
+    print(json.dumps(auth_health(until - timedelta(hours=hours), until), indent=2))

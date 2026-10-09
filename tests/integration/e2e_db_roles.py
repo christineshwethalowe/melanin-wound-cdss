@@ -13,7 +13,7 @@ from client import Checks, sql
 sys.stdout.reconfigure(encoding="utf-8")
 
 PASSWORDS = {
-    "identity_svc": "identity-local-dev", "gateway_svc": "gateway-local-dev", "persister_svc": "persister-local-dev",
+    "housekeeping_svc": "housekeeping-local-dev", "identity_svc": "identity-local-dev", "gateway_svc": "gateway-local-dev", "persister_svc": "persister-local-dev",
     "relay_svc": "relay-local-dev", "orchestrator_svc": "orchestrator-local-dev", "rag_svc": "rag-local-dev",
 }
 SERVICES = ["identity_svc", "gateway_svc", "persister_svc", "relay_svc", "orchestrator_svc"]
@@ -60,7 +60,7 @@ for role in ["gateway_svc", "persister_svc", "relay_svc", "orchestrator_svc", "r
     check(f"{role} cannot", result, detail)
 
 print("\n§12: audit.provenance and audit.auth_audit are insert-only for everyone")
-for role in SERVICES + ["rag_svc"]:
+for role in SERVICES + ["rag_svc", "housekeeping_svc"]:
     for statement in ["update audit.provenance set outcome = outcome where false",
                       "delete from audit.provenance where false",
                       "update audit.auth_audit set success = success where false",
@@ -87,6 +87,11 @@ cases = [
     ("gateway_svc", "update clinical.patient set facility_id = facility_id where false", False),
     ("persister_svc", "update clinical.wound_assessment set status = status where false", False),
     ("persister_svc", "delete from clinical.wound_assessment where false", False),
+    ("identity_svc", "update clinical.device set revoked_at = revoked_at where false", True),
+    ("identity_svc", "update clinical.device set facility_id = facility_id where false", False),
+    ("identity_svc", "delete from clinical.device where false", False),
+    ("gateway_svc", "select revoked_at from clinical.device where false", True),
+    ("gateway_svc", "update clinical.device set revoked_at = revoked_at where false", False),
 ]
 for role, statement, expected in cases:
     if expected:
@@ -107,5 +112,26 @@ for role, statement in [("relay_svc", "select 1 from clinical.patient limit 1"),
                         ("identity_svc", "select 1 from clinical.wound_assessment limit 1")]:
     result, detail = denied(role, statement)
     check(f"{role}: {statement}", result, detail)
+
+print("\n§9.4 housekeeping: deletes only short-lived rows, never sees payloads or clinical data")
+for statement, expected in [
+    ("delete from messaging.outbox where published_at < now() - interval '1 hour' and false", True),
+    ("delete from messaging.inbox where processed_at < now() and false", True),
+    ("insert into sync.change_log_archive select *, now() from sync.change_log where false", True),
+    ("delete from sync.change_log where false", True),
+    ("select payload from messaging.outbox limit 1", False),
+    ("update messaging.outbox set published_at = null where false", False),
+    ("select 1 from clinical.wound_assessment limit 1", False),
+    ("select 1 from clinical.recommendation limit 1", False),
+    ("select 1 from clinical.clinician limit 1", False),
+    ("update clinical.device set revoked_at = now() where false", False),
+    ("delete from sync.change_log_archive where false", False),
+]:
+    if expected:
+        ok, detail = allowed("housekeeping_svc", statement)
+        check(f"housekeeping_svc may: {statement[:60]}", ok, detail)
+    else:
+        result, detail = denied("housekeeping_svc", statement)
+        check(f"housekeeping_svc may not: {statement[:60]}", result, detail)
 
 sys.exit(t.finish())
