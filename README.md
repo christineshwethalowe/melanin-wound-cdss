@@ -24,6 +24,7 @@ Shared by everyone: `contracts/`. This holds the only schemas the components exc
 melanin-wound-cdss/
 ├── contracts/            # JSON Schemas every component builds against (the Wound Event, sync, auth, RAG)
 ├── mobile/               # Flutter app: calibration → measurement → Drift queue → sync engine
+├── frontend/admin_dashboard/  # Flutter Web: facility admin dashboard (clinicians, devices, audit log; ADR 0005)
 ├── backend/
 │   ├── apps/api-gateway/             # Member 4: YARP edge, the only public port (routing, rate limits, CORS)
 │   ├── apps/identity-service/        # Member 4: login, MFA, clinician admin; signs RS256 tokens, publishes JWKS
@@ -49,10 +50,12 @@ docker compose up -d --build
 ```
 
 This starts Kafka, Postgres, creates the topics, applies the migrations and seed, creates two demo users,
-then starts the API gateway, identity service, Sync Gateway, ingest persister, outbox relay, orchestrator and the Recommendation Service stub.
+then starts the API gateway, identity service, Sync Gateway, ingest persister, outbox relay, orchestrator, the Recommendation Service stub
+and the admin dashboard.
 
 | What | Where |
 |------|-------|
+| Admin dashboard: sign in as `admin.demo` / `Demo-Admin-2026!` (admins only) | http://localhost:3001 |
 | API gateway (the only backend URL) | http://localhost:8080: `/v1/auth/*`, `/v1/admin/*`, `/.well-known/*` → identity service; `/health`, `/v1/sync/*`, `/v1/patients/*`, `/v1/figures/*` → Sync Gateway |
 | Recommendation Service stub | http://localhost:5080 |
 | Kafka UI | http://localhost:8081 |

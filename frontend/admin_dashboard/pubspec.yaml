@@ -1,0 +1,22 @@
+name: admin_dashboard
+description: Facility admin dashboard for clinicians, devices and the auth audit log (ADR 0005).
+publish_to: none
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.10.0
+  flutter: ">=3.38.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.6.0
+  web: ^1.1.1                        # sessionStorage for the refresh token (ADR 0005: browser session only)
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

@@ -86,3 +86,18 @@ jobs:
       # (flutter test fails on an empty test folder).
       - if: hashFiles('mobile/test/**/*_test.dart') != ''
         run: flutter test
+
+  admin-dashboard:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend/admin_dashboard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+      - run: flutter build web --release

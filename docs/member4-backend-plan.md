@@ -44,7 +44,7 @@ What changes in the architecture: [architecture/v2.1-changes.md](architecture/v2
 | A4 | api-gateway (YARP): routing, rate limits, CORS, edge JWT check | 0004 | ✅ |
 | A5 | Web-client sessions: `clinical/0008` adds `client_id`, nullable `device_id` for the dashboard; dashboard tokens get their own audience, so the Sync Gateway refuses them | 0005 | ✅ |
 | A6 | Contract `auth.schema.json` 1.1: `clientId`, token claims and audiences, discovery, JWKS (compose and tests moved to the edge in A2/A4) | 0003, 0004, 0005 | ✅ |
-| A7 | `frontend/admin_dashboard` (Flutter Web) | 0005 | ⬜ |
+| A7 | `frontend/admin_dashboard` (Flutter Web): login with MFA prompt, clinicians (register, unlock, deactivate, reset MFA), devices (revoke), auth audit log; nginx on :3001 | 0005 | ✅ |
 | A8 | CI jobs, dev setup (VS Code launch/tasks), README | — | ✅ |
 
 Effect on later phases: phase 8 (REST baseline) and phase 10 (device simulator) go through the API gateway;

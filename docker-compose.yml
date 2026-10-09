@@ -191,6 +191,21 @@ services:
       - identity-service
       - sync-gateway
 
+  # Facility admin dashboard (architecture §2.1, §4; ADR 0005), Flutter Web on nginx: http://localhost:3001.
+  # The browser calls the api-gateway directly, so API_BASE_URL is the gateway as the browser sees it; port 3001 is the
+  # origin the gateway's CORS policy allows (Cors:AllowedOrigins). Admins only, e.g. admin.demo.
+  admin-dashboard:
+    image: melanin-wound-cdss/admin-dashboard
+    build:
+      context: frontend/admin_dashboard
+      args:
+        API_BASE_URL: ${DASHBOARD_API_BASE_URL:-http://localhost:8080}
+    restart: unless-stopped
+    ports:
+      - "3001:80"
+    depends_on:
+      - api-gateway
+
   # Issues and signs every token (ADR 0003); other services fetch its public keys from /.well-known/jwks.json.
   # Reached only through the api-gateway.
   identity-service:

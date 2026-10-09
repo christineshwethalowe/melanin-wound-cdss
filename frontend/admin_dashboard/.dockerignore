@@ -1,0 +1,7 @@
+build/
+.dart_tool/
+.idea/
+*.iml
+test/
+Dockerfile
+.dockerignore
