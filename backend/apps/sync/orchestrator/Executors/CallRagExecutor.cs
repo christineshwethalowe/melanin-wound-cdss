@@ -4,7 +4,7 @@ using Orchestrator.Graph;
 
 namespace Orchestrator.Executors;
 
-/// <summary>Calls the Recommendation Service: 200 is OK, 422/409 go to the DLQ, anything else is deferred for retry.</summary>
+/// <summary>Calls the Recommendation Service: 200 OK, 422/409 to the DLQ, anything else retried later.</summary>
 [YieldsOutput(typeof(OrchestrationOutcome))]
 public sealed class CallRagExecutor(IRecommendationClient client) : Executor<ContextBuilt, RagCallResult>("CallRag")
 {

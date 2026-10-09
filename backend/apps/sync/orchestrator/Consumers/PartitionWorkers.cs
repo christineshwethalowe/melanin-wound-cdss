@@ -5,7 +5,7 @@ using Sync.Common.Kafka;
 
 namespace Orchestrator.Consumers;
 
-/// <summary>Runs partitions in parallel but each partition in order, committing offsets only after work is durable.</summary>
+/// <summary>Partitions run in parallel, each in order; offsets commit only after work is durable.</summary>
 public sealed class PartitionWorkers(
     Func<ConsumeResult<string, byte[]>, CancellationToken, Task> handle, int maxConcurrency, int maxQueuedPerPartition,
     ILogger logger, CancellationToken stopping)

@@ -3,7 +3,7 @@ using System.Text;
 using System.Text.Json;
 using DeviceSimulator;
 
-// Device simulator for 1-100 phones; e.g. `dotnet run --project tests/device-simulator -- --devices 10 --events 20 [--mode baseline]`.
+// Device simulator for 1-100 phones, e.g. `-- --devices 10 --events 20 [--mode baseline]`.
 var options = SimOptions.Parse(args);
 var clock = TimeProvider.System;
 

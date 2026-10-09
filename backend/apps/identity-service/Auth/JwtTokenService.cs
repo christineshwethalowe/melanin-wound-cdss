@@ -8,7 +8,7 @@ using Sync.Common.Auth;
 
 namespace IdentityService.Auth;
 
-/// <summary>Who a session is for: mobile sessions are tied to a device, dashboard sessions are admin-only with no device.</summary>
+/// <summary>Who a session is for: mobile (tied to a device) or dashboard (admins only, no device).</summary>
 public static class Clients
 {
     public const string Mobile = "mobile";
@@ -30,7 +30,7 @@ public sealed class JwtOptions
     /// <summary>A browser session is shorter-lived than a device's.</summary>
     public int DashboardRefreshTokenHours { get; set; } = 12;
 
-    /// <summary>PEM private key for signing tokens; if empty a new one is generated at start-up (fine for local dev only).</summary>
+    /// <summary>PEM key for signing tokens; generated at start-up if empty (local dev only).</summary>
     public string SigningKeyPem { get; set; } = "";
 }
 

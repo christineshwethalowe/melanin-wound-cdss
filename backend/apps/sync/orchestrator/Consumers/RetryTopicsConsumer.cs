@@ -4,7 +4,7 @@ using Sync.Common.Kafka;
 
 namespace Orchestrator.Consumers;
 
-/// <summary>Handles the delayed retry topics, pausing only the waiting partition; failures move one hop further toward the DLQ.</summary>
+/// <summary>Handles the delayed retry topics; failures move one hop closer to the DLQ.</summary>
 public sealed class RetryTopicsConsumer(
     WorkflowRunner runner, OutcomeRouter router, IConfiguration config, ILogger<RetryTopicsConsumer> logger)
     : BackgroundService
@@ -15,7 +15,7 @@ public sealed class RetryTopicsConsumer(
         Task.Factory.StartNew(() => RunAsync(stoppingToken), stoppingToken, TaskCreationOptions.LongRunning,
             TaskScheduler.Default).Unwrap();
 
-    /// <summary>The delay for a retry topic; overridable (Retry:FirstDelaySeconds / Retry:SecondDelaySeconds) for tests.</summary>
+    /// <summary>A retry topic's delay; tests override it with Retry:FirstDelaySeconds/SecondDelaySeconds.</summary>
     public TimeSpan DelayFor(string topic) => topic switch
     {
         Topics.Retry30s when config.GetValue<double?>("Retry:FirstDelaySeconds") is { } s => TimeSpan.FromSeconds(s),

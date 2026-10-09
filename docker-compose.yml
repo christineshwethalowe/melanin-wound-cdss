@@ -283,7 +283,7 @@ services:
       Retry__FirstDelaySeconds: ${RETRY_FIRST_DELAY_SECONDS:-30}
       Retry__SecondDelaySeconds: ${RETRY_SECOND_DELAY_SECONDS:-300}
 
-  # Member 3's real Recommendation Service, only with `--profile rag` and RECOMMENDATION_SERVICE_URL set (see docs/integration).
+  # Member 3's real Recommendation Service; needs `--profile rag` and RECOMMENDATION_SERVICE_URL.
   recommendation-service:
     <<: *backend
     image: melanin-wound-cdss/recommendation-service

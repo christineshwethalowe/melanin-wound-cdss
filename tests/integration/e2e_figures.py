@@ -44,7 +44,7 @@ print("§10.4: a figure through the gateway")
 status, headers, data = get("/v1/figures/stub-0/F1", token)
 check("200 with the image bytes", status == 200 and data.startswith(PNG), f"{status} {data[:20]!r}")
 check("Content-Type passed through", headers.get("Content-Type") == "image/png", headers.get("Content-Type"))
-check("licence and attribution passed through",
+check("license and attribution passed through",
       headers.get("X-Figure-Licence", "").startswith("CC BY-NC") and "Stub corpus" in headers.get("X-Figure-Attribution", ""),
       headers)
 check("tier passed through", headers.get("X-Figure-Tier") == "A", headers.get("X-Figure-Tier"))

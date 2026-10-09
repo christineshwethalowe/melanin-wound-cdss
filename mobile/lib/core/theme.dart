@@ -21,7 +21,7 @@ abstract final class WoundColors {
   static const warningSoft = Color(0xFFF6E9D2);
   static const error = Color(0xFFAD3A33);
   static const errorSoft = Color(0xFFF5E0DD);
-  static const amber = Color(0xFFC79A4B); // second colour region in the distribution bar
+  static const amber = Color(0xFFC79A4B); // second color region in the distribution bar
 }
 
 abstract final class WoundRadii {

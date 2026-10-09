@@ -19,7 +19,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../test/sync/support/fakes.dart';
 
-/// End-to-end offline sync test on an emulator via Toxiproxy (run `docker compose up -d` first; pass the host address with --dart-define on a phone).
+/// End-to-end offline sync test on an emulator via Toxiproxy; start the stack with `docker compose up -d` first.
 const proxyUrl = String.fromEnvironment('SYNC_BASE_URL', defaultValue: 'http://10.0.2.2:18080');
 const toxiproxyUrl = String.fromEnvironment('TOXIPROXY_URL', defaultValue: 'http://10.0.2.2:8474');
 

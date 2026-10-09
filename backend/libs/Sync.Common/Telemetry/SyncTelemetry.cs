@@ -5,7 +5,7 @@ using Sync.Common.Kafka;
 
 namespace Sync.Common.Telemetry;
 
-/// <summary>Trace sources so one trace follows an assessment from device through Kafka to the Recommendation Service.</summary>
+/// <summary>Trace sources so one trace follows an assessment from device to the Recommendation Service.</summary>
 public static class SyncTelemetry
 {
     public static readonly ActivitySource Gateway = new("MelaninWoundCdss.SyncGateway");

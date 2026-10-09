@@ -9,7 +9,7 @@ using OpenTelemetry.Trace;
 using OpenTelemetry.Metrics;
 using Sync.Common.Web;
 
-// API gateway: the single public entry point that routes to identity and sync and handles JWT, rate limits, CORS and body size.
+// API gateway: the one public entry point; routes requests and handles JWT, rate limits, CORS and body size.
 var builder = WebApplication.CreateBuilder(args);
 builder.AddSyncTelemetry("api-gateway")
     .WithTracing(t => t.AddAspNetCoreInstrumentation())
@@ -75,7 +75,7 @@ builder.Services.AddRateLimiter(o =>
 
 var app = builder.Build();
 
-// Answer 413 up front when Content-Length is too big, since YARP would report it as 400 and the device splits batches on 413.
+// Answer 413 early for oversized bodies (YARP would say 400); the device splits batches on 413.
 var maxBody = app.Configuration.GetValue<long?>("Kestrel:Limits:MaxRequestBodySize");
 app.Use((context, next) =>
 {

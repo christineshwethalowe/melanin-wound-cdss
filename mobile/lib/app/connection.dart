@@ -25,7 +25,7 @@ String connectionLabel(Connection c) => switch (c) {
   Connection.unknown => 'Not synced yet',
 };
 
-/// "Up to date", "Waiting to sync", ...: the line under "Data synchronisation".
+/// "Up to date", "Waiting to sync", ...: the line under "Data synchronization".
 String syncSummary(SyncStatus s) => switch (connectionOf(s)) {
   Connection.connected => 'Up to date',
   Connection.syncing => 'Syncing…',

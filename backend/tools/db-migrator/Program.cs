@@ -94,7 +94,7 @@ if (args.Contains("--seed"))
     }
 }
 
-// One line per run: each applied migration is listed above it, everything routine is summarised here.
+// One line per run: each applied migration is listed above it, everything routine is summarized here.
 Console.WriteLine(string.Join("; ", new[]
 {
     count == 0 ? "Database is up to date" : $"Applied {count} migration(s)",

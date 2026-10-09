@@ -1,4 +1,4 @@
-// RAG stub for benchmarks: STUB_DELAY_MS adds latency, STUB_FAIL_MODE = none|503|422|409|uncited; also serves dummy figures F1-F3.
+// RAG stub: STUB_DELAY_MS adds latency, STUB_FAIL_MODE = none|503|422|409|uncited; serves figures F1-F3.
 var builder = WebApplication.CreateBuilder(args);
 var app = builder.Build();
 

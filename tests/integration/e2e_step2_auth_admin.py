@@ -61,7 +61,7 @@ check("other facility's admin gets 404, not 403", status == 404, f"{status}")
 
 print("TOTP multi-factor login")
 status, body = http("POST", "/v1/auth/mfa/enroll", token=nurse)
-check("enrol returns a secret and otpauth URI", status == 200 and body["otpauthUri"].startswith("otpauth://totp/"), f"{status} {body}")
+check("enroll returns a secret and otpauth URI", status == 200 and body["otpauthUri"].startswith("otpauth://totp/"), f"{status} {body}")
 secret = body["secret"]
 status, _ = login(NURSE, PASSWORD, DEVICE_A)
 check("MFA is not required until confirmed", status == 200, f"{status}")

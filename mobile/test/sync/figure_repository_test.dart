@@ -35,7 +35,7 @@ void main() {
   });
   tearDown(() => db.close());
 
-  test('a figure is fetched once, stored with its licence, then served from the cache without the network', () async {
+  test('a figure is fetched once, stored with its license, then served from the cache without the network', () async {
     await signedIn();
     final first = await figures.figureFor('iwgdf-2023.r1', 'F1');
     expect(first.isFound, isTrue);

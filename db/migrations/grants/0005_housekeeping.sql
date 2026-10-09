@@ -1,4 +1,5 @@
--- Housekeeping only deletes short-lived rows and reads just the columns its rules need.
+-- housekeeping (architecture §9.4). Deletes only what is short-lived by design, reads only the columns its retention
+-- rules look at. It never sees payloads, clinical data or credentials.
 GRANT USAGE ON SCHEMA sync, messaging, clinical TO housekeeping_svc;
 GRANT SELECT ON sync.schema_migrations TO housekeeping_svc;                -- startup schema-version check (§9.2)
 

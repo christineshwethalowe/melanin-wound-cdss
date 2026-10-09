@@ -59,6 +59,6 @@ public sealed class EventFactory(string deviceId, string facilityId, Random rand
         };
     }
 
-    /// <summary>UUIDv7: 48-bit millisecond timestamp, version 7, variant 10, random rest (§5: ids are client-generated).</summary>
+    /// <summary>UUIDv7: 48-bit millisecond timestamp, version 7, variant 10, random rest.</summary>
     public static Guid Uuid7() => Guid.CreateVersion7();
 }

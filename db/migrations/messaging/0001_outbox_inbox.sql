@@ -1,6 +1,7 @@
 CREATE SCHEMA IF NOT EXISTS messaging;
 
--- Transactional outbox, written with the business rows and published by the relay.
+-- Transactional outbox: written in the same transaction as the business rows,
+-- published to Kafka by the outbox relay using FOR UPDATE SKIP LOCKED (§4, §9.3).
 CREATE TABLE messaging.outbox (
     outbox_id    bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     topic        text NOT NULL,

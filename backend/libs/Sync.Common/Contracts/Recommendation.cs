@@ -18,7 +18,7 @@ public sealed record RecommendationRequest(
     public const string CurrentContractVersion = "1.0";
 }
 
-/// <summary>Wound analytics without fitzpatrickClass (data minimisation, §10.2).</summary>
+/// <summary>Wound analytics without fitzpatrickClass (data minimization, §10.2).</summary>
 public sealed record RagWoundAnalytics(double AreaMm2, IReadOnlyList<ColourRegion> ColourRegions, PipelineVersions Pipeline);
 
 public sealed record HealingHistoryPoint(DateTimeOffset CapturedAt, double AreaMm2, PipelineVersions Pipeline);

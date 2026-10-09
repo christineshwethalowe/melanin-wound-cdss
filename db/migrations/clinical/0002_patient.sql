@@ -1,4 +1,5 @@
--- Minimal local patient record; created before wound so it can be referenced.
+-- Minimal local patient record (§9.1). The sync path only ever sees patient_ref.
+-- Created before wound so wound.patient_ref can reference it.
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 CREATE TABLE clinical.patient (

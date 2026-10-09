@@ -17,7 +17,7 @@ abstract final class BackgroundSync {
   /// Where the open app listens for finished background runs (process-wide, see [listen]).
   static const portName = 'wound-sync-ran';
 
-  /// Refreshes the open app's screens after a background run, since Drift can't see writes from another connection. Returns a canceller.
+  /// Refreshes the open app after a background run (Drift can't see other connections' writes). Returns a canceller.
   static VoidCallback listen(AppDatabase db) {
     final port = ReceivePort();
     IsolateNameServer.removePortNameMapping(portName); // left over from a previous engine (hot restart)

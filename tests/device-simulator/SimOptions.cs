@@ -2,7 +2,7 @@ namespace DeviceSimulator;
 
 public enum SimMode { EventDriven, Baseline }
 
-/// <summary>Command-line options. Every run gets an id that tags its devices, so the metric SQL can select one run.</summary>
+/// <summary>Command-line options; each run's id tags its devices so metrics can pick out one run.</summary>
 public sealed record SimOptions
 {
     public string Gateway { get; init; } = "http://localhost:8080/";

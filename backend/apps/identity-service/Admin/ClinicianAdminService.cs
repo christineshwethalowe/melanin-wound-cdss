@@ -109,7 +109,7 @@ public sealed partial class ClinicianAdminService(NpgsqlDataSource db, PasswordH
             "UPDATE clinical.clinician_session SET revoked_at = now() WHERE clinician_id = @id AND revoked_at IS NULL");
     }
 
-    /// <summary>For a lost phone: removes the TOTP secret so the clinician can enrol again.</summary>
+    /// <summary>For a lost phone: removes the TOTP secret so the clinician can enroll again.</summary>
     public Task<string?> ResetMfaAsync(Guid actorId, string facilityId, string username, CancellationToken ct) =>
         ChangeAsync(actorId, facilityId, username, "MFA_RESET", ct, """
             UPDATE clinical.clinician_credential

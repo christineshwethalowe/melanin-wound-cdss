@@ -128,7 +128,7 @@ class _NewAssessmentCard extends StatelessWidget {
                       ),
                       SizedBox(height: 2),
                       Text(
-                        'Capture and analyse a wound image',
+                        'Capture and analyze a wound image',
                         style: TextStyle(color: Color(0xD9FFFFFF), fontSize: 13),
                       ),
                     ],
@@ -193,7 +193,7 @@ class RecentAssessments extends StatelessWidget {
                 icon: Icons.photo_camera_outlined,
                 title: patientRef == null ? 'No assessments yet' : 'No assessments linked yet',
                 message: patientRef == null
-                    ? 'Start a new assessment to capture and analyse a wound.'
+                    ? 'Start a new assessment to capture and analyze a wound.'
                     : 'Assessments you link to this patient appear here.',
               ),
             );

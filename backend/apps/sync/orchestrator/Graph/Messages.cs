@@ -3,7 +3,7 @@ using Sync.Common.Contracts;
 
 namespace Orchestrator.Graph;
 
-// Messages for the workflow: InboxCheck → SupersedeCheck → BuildContext → CallRag → ValidateResponse → PersistResult, ending in one outcome.
+// Workflow messages: InboxCheck → SupersedeCheck → BuildContext → CallRag → ValidateResponse → PersistResult.
 
 /// <summary>Workflow input: the persisted event plus the trace it belongs to (from the Kafka headers).</summary>
 public sealed record OrchestrationJob(PersistedEvent Event, string? TraceId);

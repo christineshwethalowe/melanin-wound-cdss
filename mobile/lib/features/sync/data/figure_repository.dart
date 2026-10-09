@@ -32,7 +32,7 @@ class FigureLookup {
   bool get isFound => figure != null;
 }
 
-/// Cached guideline figures (with licence and attribution); prefetched after each pull so they work offline.
+/// Cached guideline figures (with license and attribution); prefetched after each pull so they work offline.
 class FigureRepository {
   FigureRepository(this._db, this._api, this._auth, {DateTime Function()? clock}) : _now = clock ?? DateTime.now;
 

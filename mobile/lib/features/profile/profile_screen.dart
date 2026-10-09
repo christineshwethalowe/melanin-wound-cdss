@@ -93,7 +93,7 @@ class ProfileScreen extends StatelessWidget {
                     final waiting = counts.data?.waitingToSend ?? 0;
                     return _SettingRow(
                       icon: Icons.storage_rounded,
-                      label: 'Data synchronisation',
+                      label: 'Data synchronization',
                       sub:
                           '${syncSummary(status)}${waiting > 0 ? ' · $waiting waiting on this phone' : ''}'
                           '${status.lastRunAt == null ? '' : ' · checked ${formatTime(status.lastRunAt!)}'}',

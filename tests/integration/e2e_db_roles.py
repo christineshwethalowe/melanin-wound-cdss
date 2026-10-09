@@ -2,14 +2,12 @@
 import subprocess
 import sys
 
-from client import Checks, sql
+from client import Checks, db_password, sql
 
 sys.stdout.reconfigure(encoding="utf-8")
 
-PASSWORDS = {
-    "housekeeping_svc": "housekeeping-local-dev", "identity_svc": "identity-local-dev", "gateway_svc": "gateway-local-dev", "persister_svc": "persister-local-dev",
-    "relay_svc": "relay-local-dev", "orchestrator_svc": "orchestrator-local-dev", "rag_svc": "rag-local-dev",
-}
+PASSWORDS = {role: db_password(role) for role in [
+    "housekeeping_svc", "identity_svc", "gateway_svc", "persister_svc", "relay_svc", "orchestrator_svc", "rag_svc"]}
 SERVICES = ["identity_svc", "gateway_svc", "persister_svc", "relay_svc", "orchestrator_svc"]
 
 t = Checks()

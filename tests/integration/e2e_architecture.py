@@ -139,7 +139,7 @@ rev2 = wound_event(a, w, DEVICE_A, FAC_A, revision=2, patientRef=rev1["patientRe
 status, body = push([big, extra, bad_tri, rev1, rev2], token)
 res = [r["status"] + ("/" + r.get("code", "") if r["status"] == "REJECTED" else "") for r in body["results"]]
 check("event over 16 KB is REJECTED PAYLOAD_TOO_LARGE", res[0] == "REJECTED/PAYLOAD_TOO_LARGE", res)
-check("unknown field (a name) is REJECTED: data minimisation is enforced by the schema (§12)",
+check("unknown field (a name) is REJECTED: data minimization is enforced by the schema (§12)",
       res[1] == "REJECTED/SCHEMA_INVALID", res)
 check("tri-state value outside present/absent/not_recorded is REJECTED", res[2] == "REJECTED/SCHEMA_INVALID", res)
 check("valid events in the same batch are unaffected (per-event results)", res[3:] == ["ACCEPTED", "ACCEPTED"], res)

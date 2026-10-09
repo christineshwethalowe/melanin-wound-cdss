@@ -40,7 +40,7 @@ void main() {
     expect(WoundEventValidator.validate(sampleEvent()..['patientRef'] = 'Kamal Perera').join(), contains('patientRef'));
   });
 
-  test('fields outside the contract are refused (data minimisation, §12)', () {
+  test('fields outside the contract are refused (data minimization, §12)', () {
     expect(WoundEventValidator.validate(sampleEvent()..['patientName'] = 'Kamal').join(), contains('not allowed'));
   });
 

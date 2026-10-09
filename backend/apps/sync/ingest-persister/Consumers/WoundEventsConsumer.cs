@@ -10,7 +10,7 @@ using System.Diagnostics;
 
 namespace IngestPersister.Consumers;
 
-/// <summary>Persists each wound event and commits the Kafka offset only after the DB commit; bad messages go to the DLQ.</summary>
+/// <summary>Saves each wound event, committing the offset only after the DB commit; bad ones go to the DLQ.</summary>
 public sealed class WoundEventsConsumer(
     PersisterTransaction persister, IProducer<string, byte[]> producer, IConfiguration config, ILogger<WoundEventsConsumer> logger)
     : BackgroundService

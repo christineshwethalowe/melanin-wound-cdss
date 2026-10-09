@@ -57,7 +57,7 @@ public sealed class DeviceQueue(TimeProvider clock)
         return row;
     }
 
-    /// <summary>Takes the next batch (oldest first, ≤ 50 events, ≤ 256 KB) and leases it. Expired leases count as PENDING.</summary>
+    /// <summary>Leases the next batch (oldest first, ≤ 50 events, ≤ 256 KB); expired leases count as PENDING.</summary>
     public IReadOnlyList<QueuedEvent> LeaseBatch(int maxEvents = MaxBatchEvents)
     {
         var now = clock.GetUtcNow();
@@ -115,7 +115,7 @@ public sealed class DeviceQueue(TimeProvider clock)
         }
     }
 
-    /// <summary>Applies one change from pull (§7.2), matched by (assessmentId, revision). Idempotent, so re-sent changes are harmless.</summary>
+    /// <summary>Applies one pulled change by (assessmentId, revision); idempotent, so repeats are harmless.</summary>
     public void ApplyChange(Guid assessmentId, int revision, string type)
     {
         lock (_lock)

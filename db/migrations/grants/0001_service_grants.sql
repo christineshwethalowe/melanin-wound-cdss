@@ -1,4 +1,10 @@
--- Least-privilege grants per service; audit tables are insert-only and only identity can read credentials.
+-- Least privilege per service (architecture §9.4, §12, plan phase 9). Each grant matches what that service's code
+-- does, nothing more. Rules from the architecture this enforces:
+--   * audit.provenance and audit.auth_audit are insert-only: nobody can UPDATE or DELETE them.
+--   * Only the identity service can read clinical.clinician_credential (password hashes, MFA secrets).
+--   * The Recommendation Service's role sees the rag schema and nothing else.
+-- Applied last, when every table exists. A later migration that adds a table grants on it in the same file.
+-- Foreign-key checks run with the table owner's rights, so writers need no grant on referenced tables.
 
 -- Everyone: the startup schema-version check (§9.2).
 GRANT USAGE ON SCHEMA sync TO identity_svc, gateway_svc, persister_svc, relay_svc, orchestrator_svc, rag_svc;

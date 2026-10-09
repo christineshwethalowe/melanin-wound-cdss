@@ -9,7 +9,7 @@ using SyncGateway.Validation;
 
 namespace SyncGateway.Endpoints;
 
-/// <summary>Plain REST baseline for the evaluation: does everything in one request, deliberately without idempotency or retries.</summary>
+/// <summary>REST baseline for the evaluation: all in one request, deliberately no idempotency or retries.</summary>
 public static class BaselineEndpoint
 {
     public const string RecommendationClient = "recommendation-service";

@@ -5,7 +5,7 @@ using Sync.Common.Recommendations;
 
 namespace Orchestrator.Executors;
 
-/// <summary>Builds the recommendation request from the stored assessment and the wound's history, without personal ids.</summary>
+/// <summary>Builds the recommendation request from the assessment and wound history, without personal ids.</summary>
 [YieldsOutput(typeof(OrchestrationOutcome))]
 public sealed class BuildContextExecutor(IOrchestratorStore store) : Executor<SupersedeChecked, ContextBuilt>("BuildContext")
 {

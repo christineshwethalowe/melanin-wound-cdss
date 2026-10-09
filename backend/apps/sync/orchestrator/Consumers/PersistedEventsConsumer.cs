@@ -8,7 +8,7 @@ using System.Diagnostics;
 
 namespace Orchestrator.Consumers;
 
-/// <summary>Consumes persisted events and runs the workflow per message, committing only once the outcome is durable.</summary>
+/// <summary>Runs the workflow for each persisted event, committing once the outcome is durable.</summary>
 public sealed class PersistedEventsConsumer(
     WorkflowRunner runner, OutcomeRouter router, IConfiguration config, ILogger<PersistedEventsConsumer> logger)
     : BackgroundService

@@ -136,7 +136,7 @@ class _AssessmentDetailScreenState extends State<AssessmentDetailScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const SectionTitle('Colour distribution'),
+                  const SectionTitle('Color distribution'),
                   _ColourBar(v.regionPercents),
                   const SizedBox(height: 10),
                   for (var i = 0; i < v.regionPercents.length; i++)
@@ -153,14 +153,14 @@ class _AssessmentDetailScreenState extends State<AssessmentDetailScreen> {
                             ),
                           ),
                           const SizedBox(width: 8),
-                          Expanded(child: Text('Colour region ${String.fromCharCode(65 + i)}')),
+                          Expanded(child: Text('Color region ${String.fromCharCode(65 + i)}')),
                           Text('${v.regionPercents[i]}%', style: const TextStyle(fontWeight: FontWeight.w700)),
                         ],
                       ),
                     ),
                   const SizedBox(height: 6),
                   const Text(
-                    'Colour clusters represent image appearance and are not clinical tissue diagnoses.',
+                    'Color clusters represent image appearance and are not clinical tissue diagnoses.',
                     style: TextStyle(fontSize: 11.5, color: WoundColors.textTertiary),
                   ),
                 ],

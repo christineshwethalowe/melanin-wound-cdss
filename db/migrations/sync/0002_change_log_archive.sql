@@ -1,4 +1,6 @@
--- Archive for change-log rows every device has already pulled; pull never reads it.
+-- §9.4: a change-log row is "kept until every device cursor has passed it, then eligible for archival".
+-- Housekeeping moves such rows here (same columns, plus when they were moved), so the table pull reads stays small.
+-- Pull never reads the archive: every device that could still need these rows already has them.
 CREATE TABLE sync.change_log_archive (
     server_seq    bigint PRIMARY KEY,
     facility_id   text NOT NULL,

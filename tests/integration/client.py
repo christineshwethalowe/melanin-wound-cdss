@@ -86,12 +86,47 @@ def wait_for(query, expected, seconds=20):
     return False
 
 
+def dotenv():
+    """KEY=value pairs from the repo's .env, where docker compose reads the database passwords."""
+    values = {}
+    try:
+        with open(os.path.join(REPO_ROOT, ".env"), encoding="utf-8") as f:
+            for line in f:
+                key, sep, value = line.strip().partition("=")
+                if sep and key and not key.startswith("#"):
+                    values[key] = value.split(" #")[0].strip()
+    except FileNotFoundError:
+        pass
+    return values
+
+
+def db_password(role):
+    """A service role's password (identity_svc -> DB_PASSWORD_IDENTITY), as db-migrate set it from .env."""
+    name = role.removesuffix("_svc")
+    key = f"DB_PASSWORD_{name.upper()}"
+    return os.environ.get(key) or dotenv().get(key) or f"{name}-local-dev"
+
+
+def _identity_env():
+    """A local `dotnet run` reads appsettings.json (cdss/cdss); give it the owner login from .env instead."""
+    env = dict(os.environ)
+    if "ConnectionStrings__Postgres" not in env:
+        values = dotenv()
+        if "ConnectionStrings__Postgres" in values:
+            env["ConnectionStrings__Postgres"] = values["ConnectionStrings__Postgres"]
+        elif "POSTGRES_PASSWORD" in values:
+            env["ConnectionStrings__Postgres"] = (
+                f"Host=localhost;Port=5432;Database={values.get('POSTGRES_DB', 'cdss')};"
+                f"Username={values.get('POSTGRES_USER', 'cdss')};Password={values['POSTGRES_PASSWORD']}")
+    return env
+
+
 def create_clinician(username, password, role, facility, full_name="Test User"):
     """Uses the identity service's create-clinician command (the bootstrap path for a facility's first admin)."""
     out = subprocess.run(
         ["dotnet", "run", "--no-build", "--project", "backend/apps/identity-service", "--",
          "create-clinician", username, password, role, facility, full_name],
-        cwd=REPO_ROOT, capture_output=True, text=True)
+        cwd=REPO_ROOT, capture_output=True, text=True, env=_identity_env())
     if out.returncode != 0:
         raise RuntimeError(f"create-clinician failed: {out.stderr or out.stdout}")
 

@@ -11,7 +11,7 @@ namespace IngestPersister.Persistence;
 
 public enum PersistOutcome { Persisted, Deduplicated, RevisionConflict }
 
-/// <summary>Stores one event in a single transaction; new events also get an outbox row, duplicates are just noted.</summary>
+/// <summary>Stores one event in one transaction; new events get an outbox row, duplicates are noted.</summary>
 public sealed class PersisterTransaction(NpgsqlDataSource db, AblationOptions ablation)
 {
     public async Task<PersistOutcome> ExecuteAsync(

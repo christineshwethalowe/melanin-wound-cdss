@@ -59,7 +59,7 @@ class _Stop implements Exception {
   final String? detail;
 }
 
-/// The sync engine: one [sync] call pushes the queue in batches, pulls changes, and backs off on failure without ever throwing.
+/// The sync engine: one [sync] call pushes the queue, pulls changes and backs off on failure; never throws.
 class SyncEngine {
   SyncEngine({
     required QueueRepository queue,
@@ -239,7 +239,7 @@ class SyncEngine {
         throw _Stop(SyncOutcome.needsSignIn, null, response.code ?? 'FORBIDDEN');
       case 401:
         await _queue.release(ids, 'HTTP 401 after refresh');
-        throw _Stop(SyncOutcome.needsSignIn, null, 'unauthorised after refresh');
+        throw _Stop(SyncOutcome.needsSignIn, null, 'unauthorized after refresh');
       case 429:
       case 503:
         await _queue.release(ids, 'HTTP ${response.status}');
@@ -268,7 +268,7 @@ class SyncEngine {
           refreshed = true;
           continue;
         }
-        if (e.status == 401) throw _Stop(SyncOutcome.needsSignIn, null, 'unauthorised after refresh');
+        if (e.status == 401) throw _Stop(SyncOutcome.needsSignIn, null, 'unauthorized after refresh');
         throw _Stop(e.status == 429 || e.status == 503 ? SyncOutcome.serverBusy : SyncOutcome.offline,
             e.retryAfter, 'pull HTTP ${e.status}');
       }

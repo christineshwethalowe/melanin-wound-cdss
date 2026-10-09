@@ -3,7 +3,7 @@ namespace Housekeeping;
 /// <summary>Pure retention decisions, kept apart from the SQL so they can be unit-tested.</summary>
 public static class RetentionPolicy
 {
-    /// <summary>How old an inbox row must be before deletion, or null to keep everything this cycle.</summary> <param name="topicRetentions">Each topic's retention.ms (-1 = forever); null if Kafka couldn't be reached.</param>
+    /// <summary>Minimum inbox row age to delete, from each topic's retention.ms; null keeps all.</summary>
     public static TimeSpan? InboxRetention(HousekeepingOptions options, IReadOnlyCollection<long>? topicRetentions)
     {
         // Without Kafka's answer the redelivery window is unknown: keep everything rather than guess.

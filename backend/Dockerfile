@@ -1,4 +1,4 @@
-# One image for every .NET service; pick it with --build-arg PROJECT=<csproj> --build-arg ENTRY=<dll> (see docker-compose.yml).
+# One image for every .NET service; choose it with the PROJECT and ENTRY build args (see docker-compose.yml).
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 ARG PROJECT

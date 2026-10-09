@@ -8,7 +8,7 @@ public static class KafkaDefaults
 {
     public const string DefaultBootstrapServers = "localhost:29092";
 
-    /// <param name="deliveryTimeoutMs">How long a produce may wait for acks; kept short in the gateway so devices get a quick 503.</param>
+    /// <param name="deliveryTimeoutMs">How long a produce waits for acks; short in the gateway for a quick 503.</param>
     public static ProducerConfig Producer(string bootstrapServers, int deliveryTimeoutMs = 30_000) => new()
     {
         BootstrapServers = bootstrapServers,

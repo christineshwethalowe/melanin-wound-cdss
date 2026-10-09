@@ -35,7 +35,7 @@ public sealed class GatewayClient(HttpClient http, string deviceId, string usern
         }
     }
 
-    /// <summary>Registers a clinician in the admin's facility (POST /v1/admin/clinicians). 409 means it already exists.</summary>
+    /// <summary>Registers a clinician in the admin's facility; 409 means it already exists.</summary>
     public async Task RegisterClinicianAsync(string newUsername, string newPassword, CancellationToken ct)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, "v1/admin/clinicians")
@@ -158,7 +158,7 @@ public sealed class GatewayClient(HttpClient http, string deviceId, string usern
         }
     }
 
-    /// <summary>Sends with the access token; on 401 refreshes once and retries (§7.1: "401 → refresh the token, retry").</summary>
+    /// <summary>Sends with the access token; on 401 refreshes once and retries.</summary>
     private async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
     {
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);

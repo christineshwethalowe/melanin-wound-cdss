@@ -48,7 +48,7 @@ class _ProcessingScreenState extends State<ProcessingScreen> {
     _Step('Skin tone calibration'),
     _Step('Wound segmentation'),
     _Step('Area measurement'),
-    _Step('Colour distribution analysis'),
+    _Step('Color distribution analysis'),
     _Step('Saved on this phone'),
     _Step('Evidence retrieval'),
   ];
@@ -160,7 +160,7 @@ class _ProcessingScreenState extends State<ProcessingScreen> {
     return PopScope(
       canPop: _finished,
       child: Scaffold(
-        appBar: AppBar(title: const Text('Analysing Assessment'), automaticallyImplyLeading: _finished),
+        appBar: AppBar(title: const Text('Analyzing Assessment'), automaticallyImplyLeading: _finished),
         body: ListView(
           padding: const EdgeInsets.fromLTRB(20, 18, 20, 28),
           children: [
@@ -213,7 +213,7 @@ class _ProcessingScreenState extends State<ProcessingScreen> {
             ],
             const SizedBox(height: 16),
             const NoticeStrip(
-              'Prototype: calibration, segmentation, measurement and colour analysis use demonstration values until '
+              'Prototype: calibration, segmentation, measurement and color analysis use demonstration values until '
               'the on-device pipeline is added. Saving and evidence retrieval are real.',
               icon: Icons.info_outline_rounded,
             ),

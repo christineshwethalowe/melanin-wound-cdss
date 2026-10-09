@@ -80,7 +80,7 @@ void main() {
     await tapAndSettle(tester, find.byKey(const Key('shutter')));
     expect(find.text('Review Image'), findsOneWidget);
     await tapAndSettle(tester, find.byKey(const Key('useImage')));
-    expect(find.text('Analysing Assessment'), findsOneWidget);
+    expect(find.text('Analyzing Assessment'), findsOneWidget);
 
     // Four analysis steps, the save, then the sync that brings the advice back.
     for (var i = 0; i < 8; i++) {

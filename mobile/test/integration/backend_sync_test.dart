@@ -58,7 +58,7 @@ void main() {
     expect(await queue.recommendationFor(first['assessmentId'] as String, 2), isNotNull);
     expect(api.pagesWithMore, greaterThan(0), reason: 'a pull needed more than one page and followed hasMore');
 
-    // A guideline figure through the gateway's figures proxy (§10.4; the stub serves F1-F3), cached with its licence.
+    // A guideline figure through the gateway's figures proxy (§10.4; the stub serves F1-F3), cached with its license.
     final figures = FigureRepository(db, api, auth);
     final figure = await figures.figureFor('iwgdf-2023.r1', 'F1');
     expect(figure.isFound, isTrue, reason: '${figure.miss}');

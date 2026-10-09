@@ -10,7 +10,7 @@ public sealed record AuthResult(TokenPair? Tokens, string? ReasonCode)
     public static AuthResult Fail(string reason) => new(null, reason);
 }
 
-/// <summary>Login, refresh and logout for clinicians on the mobile app or the admin dashboard; every attempt is audited.</summary>
+/// <summary>Login, refresh and logout for the mobile app and admin dashboard; every attempt is audited.</summary>
 public sealed class AuthService(NpgsqlDataSource db, PasswordHasher hasher, JwtTokenService tokens, SecretProtector secrets)
 {
     public const int MaxFailedAttempts = 5;
@@ -19,11 +19,11 @@ public sealed class AuthService(NpgsqlDataSource db, PasswordHasher hasher, JwtT
     /// <summary>Caps concurrent Argon2id checks (64 MB each) so a login burst queues instead of running out of memory.</summary>
     private readonly SemaphoreSlim _hashing = new(Math.Max(2, Environment.ProcessorCount));
 
-    /// <param name="deviceId">Mobile only; null for the dashboard.</param> <param name="totp">Needed once MFA is on; a wrong code counts as a failed attempt.</param>
+    /// <param name="totp">Needed once MFA is on; a wrong code is a failed attempt.</param>
     public async Task<AuthResult> LoginAsync(string username, string password, string? deviceId, string? totp,
         CancellationToken ct, string client = Clients.Mobile)
     {
-        // Hash the password before the transaction so slow checks don't hold pooled connections; the result is reused only if the hash hasn't changed.
+        // Check the password before the transaction so slow hashing doesn't hold DB connections.
         var (checkedHash, passwordOk) = await PreVerifyPasswordAsync(username, password, ct);
 
         await using var conn = await db.OpenConnectionAsync(ct);
@@ -139,7 +139,7 @@ public sealed class AuthService(NpgsqlDataSource db, PasswordHasher hasher, JwtT
         return AuthResult.Ok(pair);
     }
 
-    /// <summary>Checks the password outside any connection; skips unknown or locked accounts and leaves them to the transaction.</summary>
+    /// <summary>Checks the password without holding a connection; skips unknown or locked accounts.</summary>
     private async Task<(string? Hash, bool Ok)> PreVerifyPasswordAsync(string username, string password, CancellationToken ct)
     {
         string hash; byte[] salt;

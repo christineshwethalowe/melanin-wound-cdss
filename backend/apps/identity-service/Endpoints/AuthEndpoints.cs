@@ -42,7 +42,7 @@ public static class AuthEndpoints
             return Results.NoContent();
         }).AllowAnonymous();
 
-        // MFA enrolment for the signed-in clinician: enrol → scan the otpauth URI → confirm with a first code.
+        // MFA enrollment for the signed-in clinician: enroll → scan the otpauth URI → confirm with a first code.
         var mfa = auth.MapGroup("/mfa").RequireAuthorization();
 
         mfa.MapPost("/enroll", async (ClaimsPrincipal user, MfaService service, CancellationToken ct) =>

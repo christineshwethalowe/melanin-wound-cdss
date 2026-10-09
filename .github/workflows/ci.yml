@@ -94,17 +94,48 @@ jobs:
       - if: hashFiles('mobile/test/**/*_test.dart') != ''
         run: flutter test
 
+  # The dashboard's tests drive the real backend, so this job starts it in Docker first.
   admin-dashboard:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # Throwaway passwords for this CI database only; locally they come from .env.
+      POSTGRES_PASSWORD: ci-postgres-only
+      DB_PASSWORD_IDENTITY: ci-identity-only
+      DB_PASSWORD_GATEWAY: ci-gateway-only
+      DB_PASSWORD_PERSISTER: ci-persister-only
+      DB_PASSWORD_RELAY: ci-relay-only
+      DB_PASSWORD_ORCHESTRATOR: ci-orchestrator-only
+      DB_PASSWORD_RAG: ci-rag-only
+      DB_PASSWORD_HOUSEKEEPING: ci-housekeeping-only
     defaults:
       run:
         working-directory: frontend/admin_dashboard
     steps:
       - uses: actions/checkout@v4
-      - uses: subosito/flutter-action@v2
+      - name: Start the backend (API gateway, identity service, Sync Gateway, demo users)
+        working-directory: .
+        run: docker compose up -d --build api-gateway identity-service sync-gateway seed-demo-users
+      - uses: actions/setup-node@v4
         with:
-          channel: stable
-      - run: flutter pub get
-      - run: flutter analyze
-      - run: flutter test
-      - run: flutter build web --release
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/admin_dashboard/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - name: Wait until the backend answers and the demo admin exists
+        working-directory: .
+        run: |
+          for i in $(seq 1 120); do
+            seeded=$(docker compose ps -a seed-demo-users --format '{{.State}} {{.ExitCode}}')
+            if curl -sf http://localhost:8080/health >/dev/null && [ "$seeded" = "exited 0" ]; then echo "backend ready"; exit 0; fi
+            sleep 5
+          done
+          echo "backend did not start in time"; exit 1
+      - run: npm test
+      - run: npm run build
+      - name: Backend logs (on failure)
+        if: failure()
+        working-directory: .
+        run: docker compose logs --tail 80 db-migrate seed-demo-users identity-service api-gateway sync-gateway

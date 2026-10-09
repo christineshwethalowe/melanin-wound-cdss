@@ -4,7 +4,7 @@ using Sync.Common.Auth;
 
 namespace SyncGateway.Endpoints;
 
-/// <summary>Proxies guideline figures to the device with strict id checks and long caching; 502 if the service is down.</summary>
+/// <summary>Proxies guideline figures to the device with strict id checks; 502 if the service is down.</summary>
 public static partial class FiguresProxyEndpoint
 {
     /// <summary>Upper bound on one figure; anything larger is refused rather than buffered.</summary>
