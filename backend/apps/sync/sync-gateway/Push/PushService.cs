@@ -7,6 +7,7 @@ using NpgsqlTypes;
 using Sync.Common.Evaluation;
 using Sync.Common.Kafka;
 using SyncGateway.Validation;
+using Sync.Common.Telemetry;
 
 namespace SyncGateway.Push;
 
@@ -114,6 +115,8 @@ public sealed class PushService(
         await RecordProvenanceAsync(deliveries.Select(d => (d.EventId, d.Task.Result.TopicPartitionOffset)).ToList(),
             tokenDeviceId, traceParent, ct);
 
+        foreach (var r in results)
+            SyncMetrics.EventsPushed.Add(1, new KeyValuePair<string, object?>("result", r!.Status));
         return new PushResponse(request.BatchId, results.Select(r => r!).ToList());
     }
 

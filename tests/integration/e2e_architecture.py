@@ -376,8 +376,6 @@ if sql("select count(*) from clinical.recommendation") == "0":
     gap("§10 orchestrator: no recommendations produced", "phase 6, executors are TODO stubs")
 if sql("select count(*) from pg_roles where rolname = 'gateway_svc'") == "0":
     gap("§9.4 / §12 per-service database roles, insert-only audit tables", "phase 9")
-gap("§13 evaluation harness: device simulator, netem/Toxiproxy scenarios", "phase 10")
-gap("§13 OpenTelemetry export and Grafana dashboards", "phase 11 (traceparent already in Kafka headers)")
 gap("§6 mobile Drift queue and sync engine", "phase 12")
 
 print(f"\n{len(gaps)} known gaps (not built yet)")

@@ -8,11 +8,13 @@ using Sync.Common.Evaluation;
 using Sync.Common.Kafka;
 using Sync.Common.Persistence;
 using Sync.Common.Recommendations;
+using Sync.Common.Telemetry;
 
 // Orchestrator (architecture §4, §10): consumes wound-events.persisted (group "orchestrator") and runs an
 // Agent Framework workflow that calls the Recommendation Service and stores the result.
 // It coordinates, retries and records. It never decides clinical content.
 var builder = Host.CreateApplicationBuilder(args);
+builder.AddSyncTelemetry("orchestrator");
 
 var dataSource = NpgsqlDataSource.Create(
     builder.Configuration.GetConnectionString("Postgres")

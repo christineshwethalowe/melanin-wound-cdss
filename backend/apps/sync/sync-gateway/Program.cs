@@ -10,10 +10,16 @@ using Sync.Common.Recommendations;
 using SyncGateway.Endpoints;
 using SyncGateway.Push;
 using SyncGateway.Validation;
+using Sync.Common.Telemetry;
+using OpenTelemetry.Trace;
+using OpenTelemetry.Metrics;
 
 // Sync Gateway (architecture §4): push/pull, patient alias, figure proxy. Stateless; scale by replicas.
 // Tokens come from the identity service (ADR 0003); this service only validates them.
 var builder = WebApplication.CreateBuilder(args);
+builder.AddSyncTelemetry("sync-gateway")
+    .WithTracing(t => t.AddAspNetCoreInstrumentation())
+    .WithMetrics(m => m.AddAspNetCoreInstrumentation());
 
 var dataSource = NpgsqlDataSource.Create(
     builder.Configuration.GetConnectionString("Postgres")
@@ -25,8 +31,8 @@ builder.Services.AddSingleton(dataSource);
 builder.Services.AddSingleton<WoundEventValidator>();
 builder.Services.AddSingleton(new AblationOptions(builder.Configuration.GetValue<bool>(AblationOptions.ConfigKey)));
 builder.Services.AddSingleton<PushService>();
-// REST baseline (§13.1): calls the same Recommendation Service, inside the request, with the same 60 s timeout
-// the orchestrator allows per attempt but no retries.
+// The Recommendation Service, for the figures proxy (§10.4) and the REST baseline (§13.1, which calls it inside the
+// request with the same 60 s the orchestrator allows per attempt, but no retries).
 builder.Services.AddSingleton(RecommendationResponseValidator.FromOutputDirectory());
 builder.Services.AddHttpClient(BaselineEndpoint.RecommendationClient, client =>
 {

@@ -3,10 +3,12 @@ using Npgsql;
 using OutboxRelay;
 using Sync.Common.Kafka;
 using Sync.Common.Persistence;
+using Sync.Common.Telemetry;
 
 // Outbox relay (architecture §4): publishes messaging.outbox rows to Kafka.
 // Can run inside the persister's process for the prototype; kept separate so it can be split out.
 var builder = Host.CreateApplicationBuilder(args);
+builder.AddSyncTelemetry("outbox-relay");
 
 var dataSource = NpgsqlDataSource.Create(
     builder.Configuration.GetConnectionString("Postgres")

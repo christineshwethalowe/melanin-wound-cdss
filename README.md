@@ -56,6 +56,9 @@ then starts the API gateway, identity service, Sync Gateway, ingest persister, o
 | API gateway (the only backend URL) | http://localhost:8080: `/v1/auth/*`, `/v1/admin/*`, `/.well-known/*` → identity service; `/health`, `/v1/sync/*`, `/v1/patients/*`, `/v1/figures/*` → Sync Gateway |
 | Recommendation Service stub | http://localhost:5080 |
 | Kafka UI | http://localhost:8081 |
+| Grafana: dashboard "Sync pipeline (§13)" (`--profile tools`) | http://localhost:3000 |
+| Jaeger: traces across services (`--profile tools`) | http://localhost:16686 |
+| Prometheus (`--profile tools`) | http://localhost:9090 |
 | PostgreSQL | `localhost:5432` (cdss / cdss) |
 | Demo users (local only) | `admin.demo` / `Demo-Admin-2026!` (admin), `n.silva` / `Demo-Pass-2026!` (nurse), facility `fac-001` |
 
@@ -67,16 +70,32 @@ docker compose down -v                                 # stop and delete Kafka +
 
 After changing backend code, run `docker compose up -d --build` again.
 
+### Run from VS Code (F5)
+
+The repository includes `.vscode/launch.json` and `tasks.json`:
+
+1. Run the task **infrastructure: up** (Terminal → Run Task). If the full stack is already running in Docker,
+   run **infrastructure: stop backend containers** first so ports 8080, 8085 and 8086 are free.
+2. Choose **Backend: all services** in Run and Debug and press F5. It builds once, then starts the identity service
+   (8085), sync-gateway (8086), API gateway (8080, the URL clients use), ingest persister, outbox relay and
+   orchestrator, each with the debugger attached. To start one service on its own, build first (Ctrl+Shift+B).
+3. Run the task **test: e2e smoke**, or launch **device simulator**.
+
+Tasks also cover the unit tests and the observability stack (**observability: up**).
+
 ### Services with `dotnet run` (for development)
 
 Requirements: Docker, .NET 10 SDK, Flutter 3.x (for the mobile app).
 
+No `.env` is needed: every setting has a local-dev default in `docker-compose.yml` (`${NAME:-default}`). To
+override one, put it in a local `.env` (never committed), e.g. `DB_PASSWORD_GATEWAY=...`. The `dotnet run` services
+read `appsettings.json`, which expects the PostgreSQL login `cdss`/`cdss`: if you set `POSTGRES_PASSWORD`, change
+those files too.
+
 ```bash
-cp .env.example .env
-docker compose up -d kafka postgres kafka-ui   # infrastructure only
-docker compose --profile tools up -d           # optional: Toxiproxy, OTel, Prometheus, Grafana
-bash infra/kafka/create-topics.sh              # create the topics
-dotnet run --project backend/tools/db-migrator # apply db/migrations
+# infrastructure: Kafka + topics, Postgres + migrations + demo users, the Recommendation Service stub
+docker compose up -d kafka postgres kafka-ui kafka-init db-migrate seed-demo-users rag-stub
+docker compose --profile tools up -d           # optional: Toxiproxy, OTel collector, Jaeger, Prometheus, Grafana
 dotnet build MelaninWoundCdss.slnx
 
 # local test clinician (dev only). Bootstrap one admin per facility this way; the admin then
@@ -102,6 +121,9 @@ python tests/integration/e2e_dashboard_client.py
 # orchestrator: recommendation round trip, superseded revisions, replay, killed worker, 503 / 422 / invalid answers.
 # Disruptive (restarts the rag-stub and the orchestrator); Docker stack only.
 python tests/integration/e2e_orchestrator.py
+
+# figures proxy (§10.4): guideline figures through the gateway, licence headers, ETag/304, unsafe ids refused
+python tests/integration/e2e_figures.py
 
 # REST baseline (§13.1): one synchronous request, no idempotency; compared with push on duplicates and waiting.
 python tests/integration/e2e_baseline.py
@@ -140,6 +162,9 @@ passwords; outside a laptop demo set `DB_PASSWORD_IDENTITY`, `DB_PASSWORD_GATEWA
 `DB_PASSWORD_RELAY`, `DB_PASSWORD_ORCHESTRATOR` and `DB_PASSWORD_RAG` in `.env`; db-migrate applies them.
 
 Progress and next steps for the backend: [docs/member4-backend-plan.md](docs/member4-backend-plan.md)
+
+Plugging in Member 3's Recommendation Service (contract, error handling, figures, database role, how to switch from
+the stub): [docs/integration/recommendation-service.md](docs/integration/recommendation-service.md)
 
 ## Working together
 

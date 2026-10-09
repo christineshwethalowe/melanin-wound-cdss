@@ -43,6 +43,32 @@ jobs:
           npx ajv test --spec=draft2020 -c ajv-formats -s contracts/tests/auth-login-request.schema.json -r contracts/auth.schema.json -d "contracts/examples/auth.login.*.valid.json" --valid
           npx ajv test --spec=draft2020 -c ajv-formats -s contracts/tests/auth-login-request.schema.json -r contracts/auth.schema.json -d "contracts/examples/auth.login.*.invalid.json" --invalid
 
+  # Dev setup and evaluation tooling: catches a broken compose file, a Python script that no longer compiles, an
+  # unparseable VS Code config, or a Grafana dashboard edited by hand instead of through its generator.
+  tooling:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: docker-compose.yml is valid (including the tools profile)
+        run: docker compose --profile tools config --quiet
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Test and evaluation scripts compile
+        run: python -m compileall -q tests infra
+      - name: VS Code launch and task files parse
+        run: |
+          python - <<'EOF'
+          import json, re
+          for path in [".vscode/launch.json", ".vscode/tasks.json", ".vscode/extensions.json"]:
+              json.loads(re.sub(r"^\s*//.*$", "", open(path, encoding="utf-8").read(), flags=re.M))
+              print("ok", path)
+          EOF
+      - name: Grafana dashboard matches its generator
+        run: |
+          python infra/grafana/build_dashboard.py
+          git diff --exit-code infra/grafana/dashboards
+
   mobile:
     runs-on: ubuntu-latest
     defaults:
