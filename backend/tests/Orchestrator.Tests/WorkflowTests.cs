@@ -1,17 +1,16 @@
 using System.Text.Json;
-using Json.Schema;
 using Orchestrator.Clients;
 using Orchestrator.Graph;
 using Orchestrator.Persistence;
 using Sync.Common.Contracts;
+using Sync.Common.Recommendations;
 
 namespace Orchestrator.Tests;
 
 /// <summary>Every path through the §10.1 workflow ends with exactly one outcome, and only the success path stores.</summary>
 public class WorkflowTests
 {
-    private static readonly JsonSchema ResponseSchema = JsonSchema.FromText(File.ReadAllText(
-        Path.Combine(AppContext.BaseDirectory, "contracts", "rag-response.schema.json")));
+    private static readonly RecommendationResponseValidator Validator = RecommendationResponseValidator.FromOutputDirectory();
 
     private static OrchestrationJob Job() =>
         new(new PersistedEvent(Guid.NewGuid(), Guid.NewGuid(), 1, Guid.NewGuid()), "00-trace-span-01");
@@ -20,7 +19,7 @@ public class WorkflowTests
     {
         var store = new FakeStore();
         var client = new FakeClient(answer ?? (r => new RecommendationCallResult(200, ValidBody(r), null)));
-        return (new WorkflowRunner(new OrchestratorGraph(store, client, ResponseSchema)), store, client);
+        return (new WorkflowRunner(new OrchestratorGraph(store, client, Validator)), store, client);
     }
 
     internal static JsonElement ValidBody(RecommendationRequest r, string tag = "S1") => JsonSerializer.SerializeToElement(new

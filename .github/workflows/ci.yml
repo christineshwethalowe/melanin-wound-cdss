@@ -23,7 +23,25 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npx --yes ajv-cli@5 validate --spec=draft2020 -s contracts/wound-event.schema.json -d "contracts/examples/wound-event.*.valid.json"
+      # ajv-formats adds the date-time / uuid / uri formats the contracts use; without it ajv's strict mode
+      # rejects every schema that has a "format".
+      - name: Install ajv
+        run: npm install --no-save --no-package-lock ajv-cli@5 ajv-formats@3
+      - name: Every contract compiles
+        run: |
+          for s in contracts/*.schema.json; do
+            # sync-changes embeds the RAG response; give it that schema to resolve the reference.
+            if [ "$s" = contracts/sync-changes.schema.json ]; then refs="-r contracts/rag-response.schema.json"; else refs=""; fi
+            npx ajv compile --spec=draft2020 -c ajv-formats -s "$s" $refs
+          done
+      - name: Wound Event examples (§5)
+        run: |
+          npx ajv test --spec=draft2020 -c ajv-formats -s contracts/wound-event.schema.json -d "contracts/examples/wound-event.*.valid.json" --valid
+          npx ajv test --spec=draft2020 -c ajv-formats -s contracts/wound-event.schema.json -d "contracts/examples/wound-event.*.invalid.json" --invalid
+      - name: Auth login examples (§7.3, ADR 0005)
+        run: |
+          npx ajv test --spec=draft2020 -c ajv-formats -s contracts/tests/auth-login-request.schema.json -r contracts/auth.schema.json -d "contracts/examples/auth.login.*.valid.json" --valid
+          npx ajv test --spec=draft2020 -c ajv-formats -s contracts/tests/auth-login-request.schema.json -r contracts/auth.schema.json -d "contracts/examples/auth.login.*.invalid.json" --invalid
 
   mobile:
     runs-on: ubuntu-latest

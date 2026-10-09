@@ -39,5 +39,8 @@ public static class ExpectedSchemaVersions
         ["messaging"] = 1,
         ["audit"] = 3,
         ["sync"] = 1,
+        ["baseline"] = 1,
+        ["_roles"] = 1,
+        ["grants"] = 2,
     };
 }

@@ -103,6 +103,12 @@ python tests/integration/e2e_dashboard_client.py
 # Disruptive (restarts the rag-stub and the orchestrator); Docker stack only.
 python tests/integration/e2e_orchestrator.py
 
+# REST baseline (§13.1): one synchronous request, no idempotency; compared with push on duplicates and waiting.
+python tests/integration/e2e_baseline.py
+
+# per-service database roles: insert-only audit, credentials readable only by the identity service
+python tests/integration/e2e_db_roles.py
+
 # retry topics: delayed redelivery without head-of-line blocking, then the DLQ. Disruptive, about 2 minutes.
 python tests/integration/e2e_retry.py
 
@@ -121,6 +127,10 @@ Outside local development, set these for the identity service instead of using t
 
 - `Jwt__SigningKeyPem`: RSA private key in PEM, e.g. from `openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048`
 - `Secrets__EncryptionKey`: at least 32 characters (encrypts MFA secrets)
+
+Each service logs in to PostgreSQL with its own least-privilege role (plan phase 9). Docker uses local-dev
+passwords; outside a laptop demo set `DB_PASSWORD_IDENTITY`, `DB_PASSWORD_GATEWAY`, `DB_PASSWORD_PERSISTER`,
+`DB_PASSWORD_RELAY`, `DB_PASSWORD_ORCHESTRATOR` and `DB_PASSWORD_RAG` in `.env`; db-migrate applies them.
 
 Progress and next steps for the backend: [docs/member4-backend-plan.md](docs/member4-backend-plan.md)
 

@@ -86,16 +86,20 @@ try:
     a1 = uuid7()
     e1 = wound_event(a1, uuid7(), DEVICE, FAC)
     push(e1)
-    check("Recommendation Service down: event deferred to wound-events.retry.30s",
-          wait(lambda: messages_for("wound-events.retry.30s", e1["eventId"]), 90))
+    # Detected in the database (fast) so the newer event goes in well inside the first event's delay window.
+    check("Recommendation Service down: event deferred (ADVICE_DEFERRED)",
+          wait_for(f"select count(*) from sync.change_log where assessment_id = '{a1}' and change_type = 'ADVICE_DEFERRED'",
+                   "1", 90))
     stub("none")
     a2 = uuid7()
     e2 = wound_event(a2, uuid7(), DEVICE, FAC)
     push(e2)
-    check("a newer event is handled straight away while the first one waits (no head-of-line blocking)",
-          wait(lambda: stored(a2), 30))
-    check("... the waiting event has not been retried early", not stored(a1))
+    check("a newer event is handled while the first one waits (no head-of-line blocking)", wait(lambda: stored(a2), 30))
     check("the deferred event is retried after its delay and gets its recommendation", wait(lambda: stored(a1), FIRST + 60))
+    order = sql(f"""select string_agg(assessment_id::text, ',' order by created_at) from clinical.recommendation
+                    where assessment_id in ('{a1}', '{a2}')""")
+    check("... the newer event got its advice first", order == f"{a2},{a1}", order)
+    check("... and the copy went through wound-events.retry.30s", messages_for("wound-events.retry.30s", e1["eventId"]))
     # Measured in the database (ADVICE_DEFERRED is written just before the retry copy is produced), not by when
     # this script happened to notice the retry message.
     waited = float(sql(f"""select extract(epoch from r.created_at - c.created_at) from sync.change_log c

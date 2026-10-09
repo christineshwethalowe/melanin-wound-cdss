@@ -1,12 +1,12 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using Orchestrator.Persistence;
 using Sync.Common.Contracts;
 
-namespace Orchestrator.Graph;
+namespace Sync.Common.Recommendations;
 
 /// <summary>
-/// Turns a stored assessment into the RAG contract v1.0 request (architecture §10.1 BuildContext, §10.2).
+/// Turns a stored assessment into the RAG contract v1.0 request (architecture §10.1 BuildContext, §10.2), for both
+/// the orchestrator and the REST baseline (§13.1).
 /// Data minimisation happens here: the request is built field by field from what the contract allows, so
 /// patientRef, deviceId, facilityId and fitzpatrickClass can never cross the boundary. caseId is the assessment id.
 /// </summary>

@@ -1,7 +1,6 @@
 using System.Text.Json;
 using Json.Schema;
-using Orchestrator.Graph;
-using Orchestrator.Persistence;
+using Sync.Common.Recommendations;
 
 namespace Orchestrator.Tests;
 

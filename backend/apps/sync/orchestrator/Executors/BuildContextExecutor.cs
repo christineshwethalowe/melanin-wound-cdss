@@ -1,6 +1,7 @@
 using Microsoft.Agents.AI.Workflows;
 using Orchestrator.Graph;
 using Orchestrator.Persistence;
+using Sync.Common.Recommendations;
 
 namespace Orchestrator.Executors;
 

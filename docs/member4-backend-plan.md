@@ -25,8 +25,8 @@ and the pipeline recovered when Kafka came back.
 | 5 | Pull endpoint: change log → device | §7.2 | ✅ |
 | 6 | Orchestrator workflow + Recommendation Service stub | §10 | ✅ |
 | 7 | Retry topics and dead-letter topic | §8.3, §11 | ✅ |
-| 8 | REST baseline endpoint | §13.1 | ⬜ |
-| 9 | Per-service database roles (least privilege) | §9.4, §12 | ⬜ |
+| 8 | REST baseline endpoint | §13.1 | ✅ |
+| 9 | Per-service database roles (least privilege) | §9.4, §12 | ✅ |
 | 10 | Evaluation harness: device simulator, faults, metrics | §13 | ⬜ |
 | 11 | Observability: OpenTelemetry, Prometheus, Grafana | §13 | ⬜ |
 | 12 | Mobile: Drift queue + sync engine | §6 | ⬜ |
@@ -177,10 +177,32 @@ in the headers) and `RetryRoutingTests`.
 - `POST /v1/baseline/assessments`: writes PostgreSQL and calls the same stub inside the request.
   No idempotency, so the comparison shows what duplicates look like without the mechanism.
 
+✅ **Verified:** `python tests/integration/e2e_baseline.py` (16 checks), including the two comparisons for §13:
+a retried baseline request is stored twice while the same event pushed twice is stored once; with a 3 s
+Recommendation Service the baseline makes the device wait 3 s while push answers in under a second.
+
+- Same token rules, same wound-event validation, same request builder and the same answer validation as the
+  event-driven path (`Sync.Common.Recommendations` is shared), so the architecture is the only variable.
+- Writes its own `baseline` schema (migration `baseline/0001`), never the clinical record or the audit trail.
+- A failed call returns 502 after the assessment is already written: a partial result, as a naive REST design has.
+
 ## Phase 9: Database roles
 
 - One login role per service. `audit.provenance` and `audit.auth_audit` are insert-only.
-  Only the gateway can read `clinical.clinician_credential`. The `rag` role sees only `rag`.
+  Only the identity service can read `clinical.clinician_credential` (v2.1: was the gateway). The `rag` role sees only `rag`.
+
+✅ **Verified:** `python tests/integration/e2e_db_roles.py` (63 checks: each service is connected under its own role;
+only `identity_svc` reads credentials; nobody can UPDATE, DELETE or TRUNCATE the audit tables; `rag_svc` sees only
+`rag`; column-level writes such as the orchestrator changing only `wound_assessment.status`). Every other suite
+passes with the services running under these roles, which shows the grants are sufficient.
+
+- Roles: `identity_svc`, `gateway_svc`, `persister_svc`, `relay_svc`, `orchestrator_svc`, `rag_svc`, created in
+  `db/migrations/_roles` (applied right after `_bootstrap`) and granted in `db/migrations/grants` (applied last).
+- Passwords never go in a migration: db-migrator sets them from `ServiceRoles__<role>`; a role without one cannot
+  log in. The owner login (`cdss`) is used only by db-migrate.
+- A migration that adds a table grants on it in the same file.
+- `INSERT ... ON CONFLICT (cols)` needs SELECT on the conflict columns: `grants/0002` adds those, column-level.
+- Local `dotnet run` still uses the owner login from `appsettings.json`; the roles apply in Docker.
 
 ## Phase 10: Evaluation harness
 

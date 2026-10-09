@@ -5,6 +5,7 @@ using Orchestrator.Graph;
 using Sync.Common.Contracts;
 using Sync.Common.Kafka;
 using Sync.Common.Persistence;
+using Sync.Common.Recommendations;
 
 namespace Orchestrator.Persistence;
 

@@ -1,8 +1,8 @@
-using Json.Schema;
 using Microsoft.Agents.AI.Workflows;
 using Orchestrator.Clients;
 using Orchestrator.Executors;
 using Orchestrator.Persistence;
+using Sync.Common.Recommendations;
 
 namespace Orchestrator.Graph;
 
@@ -15,7 +15,8 @@ namespace Orchestrator.Graph;
 /// committed only after the run's outcome is durable, so a killed worker's message is redelivered and the
 /// run repeats; InboxCheck and the unique (assessment_id, revision) constraint make the repeat harmless (§11).
 /// </summary>
-public sealed class OrchestratorGraph(IOrchestratorStore store, IRecommendationClient client, JsonSchema responseSchema)
+public sealed class OrchestratorGraph(IOrchestratorStore store, IRecommendationClient client,
+    RecommendationResponseValidator validator)
 {
     /// <summary>A fresh workflow per run, so runs on different consumers never share executor instances.</summary>
     public Workflow Create()
@@ -24,7 +25,7 @@ public sealed class OrchestratorGraph(IOrchestratorStore store, IRecommendationC
         var supersede = new SupersedeCheckExecutor(store);
         var context = new BuildContextExecutor(store);
         var callRag = new CallRagExecutor(client);
-        var validate = new ValidateResponseExecutor(responseSchema);
+        var validate = new ValidateResponseExecutor(validator);
         var persist = new PersistResultExecutor(store);
 
         return new WorkflowBuilder(inbox)
