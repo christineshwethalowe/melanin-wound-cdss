@@ -2,33 +2,24 @@ using Confluent.Kafka;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Npgsql;
+using Sync.Common.Auth;
 using Sync.Common.Kafka;
 using Sync.Common.Persistence;
-using SyncGateway.Auth;
 using SyncGateway.Endpoints;
 using SyncGateway.Push;
 using SyncGateway.Validation;
 
-// Sync Gateway (architecture §4): push/pull, clinician auth, figure proxy. Stateless; scale by replicas.
+// Sync Gateway (architecture §4): push/pull, patient alias, figure proxy. Stateless; scale by replicas.
+// Tokens come from the identity service (ADR 0003); this service only validates them.
 var builder = WebApplication.CreateBuilder(args);
 
 var dataSource = NpgsqlDataSource.Create(
     builder.Configuration.GetConnectionString("Postgres")
     ?? "Host=localhost;Username=cdss;Password=cdss;Database=cdss");
 
-// `dotnet run -- create-clinician ...` registers a clinician and exits (local testing and demos).
-if (args.FirstOrDefault() == "create-clinician")
-    return await CreateClinicianCommand.RunAsync(args, dataSource);
-
-var jwt = builder.Configuration.GetSection("Jwt").Get<JwtOptions>() ?? new JwtOptions();
-if (jwt.SigningKey.Length < 32)
-    throw new InvalidOperationException("Jwt:SigningKey must be at least 32 characters (set Jwt__SigningKey).");
+var jwt = builder.Configuration.GetSection("Jwt");
 
 builder.Services.AddSingleton(dataSource);
-builder.Services.AddSingleton(jwt);
-builder.Services.AddSingleton<JwtTokenService>();
-builder.Services.AddSingleton<PasswordHasher>();
-builder.Services.AddSingleton<AuthService>();
 builder.Services.AddSingleton<WoundEventValidator>();
 builder.Services.AddSingleton<PushService>();
 builder.Services.AddSingleton<IProducer<string, byte[]>>(_ => new ProducerBuilder<string, byte[]>(
@@ -40,12 +31,17 @@ builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(o =>
     {
+        // Public keys come from the identity service's JWKS, fetched once and cached; a token with an unknown
+        // kid triggers a refetch (key rotation). No call to the identity service per request.
+        o.MetadataAddress = jwt["MetadataAddress"] ?? "http://localhost:8085/.well-known/openid-configuration";
+        o.RequireHttpsMetadata = jwt.GetValue("RequireHttpsMetadata", false);
+        o.RefreshInterval = TimeSpan.FromSeconds(30); // retry soon if the identity service was not up yet
         o.MapInboundClaims = false;
         o.TokenValidationParameters = new TokenValidationParameters
         {
-            ValidIssuer = jwt.Issuer,
-            ValidAudience = jwt.Audience,
-            IssuerSigningKey = jwt.Key,
+            ValidIssuer = jwt["Issuer"] ?? "melanin-wound-cdss",
+            ValidAudience = jwt["Audience"] ?? "melanin-wound-cdss-devices",
+            ValidAlgorithms = [SecurityAlgorithms.RsaSha256],
             ClockSkew = TimeSpan.FromSeconds(30),
             NameClaimType = ClaimNames.Subject,
             RoleClaimType = ClaimNames.Role,
@@ -66,7 +62,7 @@ app.UseAuthorization();
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 
 var v1 = app.MapGroup("/v1");
-v1.MapAuthEndpoints();
+v1.MapPatientEndpoints();
 v1.MapPushEndpoint();
 v1.MapPullEndpoint();
 v1.MapFiguresProxyEndpoint();

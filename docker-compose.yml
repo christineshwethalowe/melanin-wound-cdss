@@ -1,8 +1,29 @@
 # Local prototype stack (architecture §14). One machine, single Kafka broker.
-# The .NET services run with `dotnet run` during development; containers for them come later.
+#
+#   docker compose up -d --build                       whole backend in containers
+#   docker compose up -d kafka postgres kafka-ui       infrastructure only (run services with `dotnet run`)
+#   docker compose --profile tools up -d               + Toxiproxy, OpenTelemetry, Prometheus, Grafana
+#
+# Start-up order: kafka + postgres → kafka-init (topics) + db-migrate (schemas, seed, demo users) → services.
 name: melanin-wound-cdss
 
+x-backend: &backend
+  build: &backend-build
+    context: .
+    dockerfile: backend/Dockerfile
+  restart: unless-stopped
+  environment: &backend-env
+    ConnectionStrings__Postgres: "Host=postgres;Username=${POSTGRES_USER:-cdss};Password=${POSTGRES_PASSWORD:-cdss};Database=${POSTGRES_DB:-cdss}"
+    Kafka__BootstrapServers: "kafka:9092"
+  depends_on: &backend-deps
+    db-migrate:
+      condition: service_completed_successfully
+    kafka-init:
+      condition: service_completed_successfully
+
 services:
+  # ---- Infrastructure -------------------------------------------------------------------------
+
   kafka:
     image: apache/kafka:3.9.0
     container_name: kafka
@@ -24,6 +45,11 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
     volumes:
       - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
 
   postgres:
     image: pgvector/pgvector:pg16
@@ -50,8 +76,147 @@ services:
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
     depends_on: [kafka]
 
-  # ---- Optional: fault injection and observability ----------------------------------------
-  # Start with: docker compose --profile tools up -d
+  # ---- One-shot setup jobs --------------------------------------------------------------------
+
+  # Topics from §8.1 (same list as infra/kafka/create-topics.sh). Safe to run again.
+  kafka-init:
+    image: apache/kafka:3.9.0
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        set -e
+        t() { /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic "$$1" --partitions "$$2" --replication-factor 1; }
+        t wound-events 6
+        t wound-events.persisted 6
+        t recommendations.ready 3
+        t wound-events.retry.30s 3
+        t wound-events.retry.5m 3
+        t wound-events.dlq 1
+    restart: "no"
+
+  # Applies db/migrations, the local-dev seed (facility fac-001, device dev-a41c), and demo users.
+  # Demo users are for local development only; create-clinician skips a username that already exists.
+  db-migrate:
+    <<: *backend
+    build:
+      <<: *backend-build
+      args:
+        PROJECT: backend/tools/db-migrator/DbMigrator.csproj
+        ENTRY: DbMigrator.dll
+    image: melanin-wound-cdss/db-migrator
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["--seed"]
+
+  seed-demo-users:
+    <<: *backend
+    image: melanin-wound-cdss/identity-service
+    build:
+      <<: *backend-build
+      args:
+        PROJECT: backend/apps/identity-service/IdentityService.csproj
+        ENTRY: IdentityService.dll
+    restart: "no"
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        dotnet IdentityService.dll create-clinician admin.demo Demo-Admin-2026! admin fac-001 Demo Admin || true
+        dotnet IdentityService.dll create-clinician n.silva Demo-Pass-2026! nurse fac-001 N. Silva || true
+
+  # ---- Member 4 backend units (§4) ------------------------------------------------------------
+
+  # Issues and signs every token (ADR 0003); other services fetch its public keys from /.well-known/jwks.json.
+  identity-service:
+    <<: *backend
+    image: melanin-wound-cdss/identity-service
+    build:
+      <<: *backend-build
+      args:
+        PROJECT: backend/apps/identity-service/IdentityService.csproj
+        ENTRY: IdentityService.dll
+    ports:
+      - "8085:8080"
+    environment:
+      <<: *backend-env
+      # Local development values. Without Jwt__SigningKeyPem a key is generated at start-up (restart = devices refresh).
+      Jwt__SigningKeyPem: ${Jwt__SigningKeyPem:-}
+      Secrets__EncryptionKey: ${Secrets__EncryptionKey:-local-dev-only-encryption-key-change-me-0123456}
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
+
+  sync-gateway:
+    <<: *backend
+    image: melanin-wound-cdss/sync-gateway
+    build:
+      <<: *backend-build
+      args:
+        PROJECT: backend/apps/sync/sync-gateway/SyncGateway.csproj
+        ENTRY: SyncGateway.dll
+    ports:
+      - "8080:8080"
+    environment:
+      <<: *backend-env
+      Jwt__MetadataAddress: "http://identity-service:8080/.well-known/openid-configuration"
+    depends_on:
+      <<: *backend-deps
+      identity-service:
+        condition: service_started
+
+  ingest-persister:
+    <<: *backend
+    image: melanin-wound-cdss/ingest-persister
+    build:
+      <<: *backend-build
+      args:
+        PROJECT: backend/apps/sync/ingest-persister/IngestPersister.csproj
+        ENTRY: IngestPersister.dll
+
+  outbox-relay:
+    <<: *backend
+    image: melanin-wound-cdss/outbox-relay
+    build:
+      <<: *backend-build
+      args:
+        PROJECT: backend/apps/sync/outbox-relay/OutboxRelay.csproj
+        ENTRY: OutboxRelay.dll
+
+  orchestrator:
+    <<: *backend
+    image: melanin-wound-cdss/orchestrator
+    build:
+      <<: *backend-build
+      args:
+        PROJECT: backend/apps/sync/orchestrator/Orchestrator.csproj
+        ENTRY: Orchestrator.dll
+    environment:
+      <<: *backend-env
+      RecommendationService__BaseUrl: "http://rag-stub:8080"
+
+  # Stand-in for Member 3's Recommendation Service until the real one is ready (§13.1).
+  rag-stub:
+    image: melanin-wound-cdss/rag-stub
+    build:
+      <<: *backend-build
+      args:
+        PROJECT: backend/tests/rag-stub/RagStub.csproj
+        ENTRY: RagStub.dll
+    restart: unless-stopped
+    ports:
+      - "5080:8080"
+    environment:
+      STUB_DELAY_MS: ${STUB_DELAY_MS:-0}
+      STUB_FAIL_MODE: ${STUB_FAIL_MODE:-none}
+
+  # ---- Optional: fault injection and observability ----------------------------------------------
   # These mount config files from infra/, so Docker Desktop must be allowed to share this drive.
 
   toxiproxy:

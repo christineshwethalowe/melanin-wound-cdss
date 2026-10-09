@@ -1,4 +1,4 @@
-using SyncGateway.Auth;
+using Sync.Common.Auth;
 using SyncGateway.Push;
 
 namespace SyncGateway.Endpoints;
